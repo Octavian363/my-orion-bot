@@ -7,8 +7,8 @@ const path = require('path');
 
 // 1. SECURE CONFIGURATION
 // Îi dăm o cheie de rezervă locală dacă process.env e gol pe PC-ul tău
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN || "MTUwNTUwMDg2MTc4MTExNDk5MA.GehaCP.bBVDPQk0y5iYdp-iPoA5FGgtJyx7PMdw-bBvvw";
-const GROQ_API_KEY = process.env.GROQ_API_KEY || "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"; 
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const GROQ_API_KEY = process.env.GROQ_API_KEY; 
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
 
 const WELCOME_CHANNEL_NAME = "general"; 
