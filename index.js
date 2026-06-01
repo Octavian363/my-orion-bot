@@ -108,7 +108,7 @@ const commands = [
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
     new SlashCommandBuilder()
-        .setName('flip')
+        .setName('coinflip')
         .setDescription('Flip a coin! Head or Tail?'),
     new SlashCommandBuilder()
         .setName('rps')
