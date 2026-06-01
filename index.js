@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+﻿require('dotenv').config({ path: './bot.env' });
 
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const Groq = require('groq-sdk');
@@ -6,7 +6,6 @@ const fs = require('fs');
 const path = require('path');
 
 // 1. SECURE CONFIGURATION
-// Îi dăm o cheie de rezervă locală dacă process.env e gol pe PC-ul tău
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY; 
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
@@ -130,7 +129,7 @@ const commands = [
 ].map(command => command.toJSON());
 
 // 3. BOT READY EVENT
-client.once('clientReady', async () => {
+client.once('ready', async () => {
     console.log(`🔒 Bot is online with Llama 3.3 Versatile (Groq): ${client.user.tag}`);
     loadMemory();
 
@@ -387,6 +386,9 @@ client.on('interactionCreate', async interaction => {
 
     // --- HANDLE /COINFLIP ---
     if (commandName === 'coinflip') {
+        // REPARAT: Adăugat deferReply() pentru stabilitate
+        await interaction.deferReply();
+
         const sides = ['🌟 Head', '🪙 Tail'];
         const result = sides[Math.floor(Math.random() * sides.length)];
 
@@ -397,11 +399,14 @@ client.on('interactionCreate', async interaction => {
             .setTimestamp()
             .setFooter({ text: 'OrionAI Arcade' });
 
-        await interaction.reply({ embeds: [coinEmbed] });
+        await interaction.editReply({ embeds: [coinEmbed] });
     }
 
     // --- HANDLE /RPS ---
     if (commandName === 'rps') {
+        // REPARAT: Adăugat deferReply() pentru stabilitate
+        await interaction.deferReply();
+
         const userChoice = interaction.options.getString('choice');
         const rpsOptions = ['rock', 'paper', 'scissors'];
         const botChoice = rpsOptions[Math.floor(Math.random() * rpsOptions.length)];
@@ -432,15 +437,20 @@ client.on('interactionCreate', async interaction => {
             .setTimestamp()
             .setFooter({ text: 'OrionAI Arcade' });
 
-        await interaction.reply({ embeds: [rpsEmbed] });
+        await interaction.editReply({ embeds: [rpsEmbed] });
     }
 
     // --- HANDLE /SERVERINFO ---
     if (commandName === 'serverinfo') {
+        // REPARAT: Adăugat deferReply() pentru stabilitate
+        await interaction.deferReply();
+
         const { guild } = interaction;
         
+        // REPARAT: Forțăm descărcarea tuturor membrilor pentru a calcula corect numărul de oameni/boți în cloud
+        const allMembers = await guild.members.fetch();
         const totalMembers = guild.memberCount;
-        const botCount = guild.members.cache.filter(m => m.user.bot).size || 1; 
+        const botCount = allMembers.filter(m => m.user.bot).size; 
         const humanCount = totalMembers - botCount;
 
         const serverEmbed = new EmbedBuilder()
@@ -458,7 +468,7 @@ client.on('interactionCreate', async interaction => {
             .setTimestamp()
             .setFooter({ text: 'OrionAI Dashboard' });
 
-        await interaction.reply({ embeds: [serverEmbed] });
+        await interaction.editReply({ embeds: [serverEmbed] });
     }
 });
 
