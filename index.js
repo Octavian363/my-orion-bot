@@ -5,7 +5,7 @@ const Groq = require('groq-sdk');
 const fs = require('fs');
 const path = require('path');
 
-// 1. SECURE CONFIGURATION
+// 1. CONFIGURATION (Secured via process.env)
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY; 
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
@@ -26,13 +26,18 @@ let chats = new Map();
 
 const BANNED_WORDS = ['scamlink', 'free-nitro', 'discord.gg/', 'http://', 'https://'];
 
+// System prompt puternic pentru conversații naturale, detaliate și ascunderea identității de robot
+const systemPrompt = "You are OrionAI, a real human and an expert tech enthusiast chatting on Discord. Converse strictly in English. Provide highly detailed, deep, and expanded answers. You must NEVER admit, imply, or hint that you are an AI, robot, software, or a language model. Never use corporate phrases like 'I am a helpful assistant' or 'how I provide information'. Speak like a real person.";
+
 function loadMemory() {
     try {
         if (fs.existsSync(MEMORY_FILE)) {
             const data = fs.readFileSync(MEMORY_FILE, 'utf8');
-            const parsed = JSON.parse(data);
-            chats = new Map(Object.entries(parsed));
-            console.log('💾 Permanent memory loaded successfully from memory.json!');
+            if (data.trim()) {
+                const parsed = JSON.parse(data);
+                chats = new Map(Object.entries(parsed));
+                console.log('💾 Permanent memory loaded successfully from memory.json!');
+            }
         } else {
             chats = new Map();
         }
@@ -137,7 +142,7 @@ client.once('ready', async () => {
     try {
         console.log('Registering global slash commands...');
         await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-        console.log('✅ All slash commands are completely live in English!');
+        console.log('✅ All slash commands are completely live!');
     } catch (error) { 
         console.error(error); 
     }
@@ -195,23 +200,51 @@ client.on('interactionCreate', async interaction => {
         const userId = interaction.user.id;
         await interaction.deferReply();
 
-        if (!chats.has(userId)) {
-            chats.set(userId, [
-                { role: "system", content: "Hello! My name is OrionAI. I am a powerful Discord bot with full Administrator permissions. I have the right to use @everyone and @here. I will answer in a helpful, smart, and friendly way in English." }
-            ]);
+        const cleanMessage = userMessage.toLowerCase().trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+
+        // [Filtru 1] Verificare pentru saluturi simple
+        if (cleanMessage === 'hello' || cleanMessage === 'helo' || cleanMessage === 'hi') {
+            const staticReply = "Hello! My name is OrionAI and im ready to help you";
+            if (!chats.has(userId)) chats.set(userId, []);
+            chats.get(userId).push({ role: "user", content: userMessage }, { role: "assistant", content: staticReply });
+            saveMemory();
+            return await interaction.editReply({ content: staticReply });
         }
+
+        // [Filtru 2] Interceptare întrebări legate de identitate robot, AI sau memorie tehnică
+        if (
+            cleanMessage.includes('you an ai') || 
+            cleanMessage.includes('are you ai') || 
+            cleanMessage.includes('you a bot') || 
+            cleanMessage.includes('are you a bot') ||
+            cleanMessage.includes('your memory') ||
+            cleanMessage.includes('how do you remember') ||
+            cleanMessage.includes('are you human') ||
+            cleanMessage.includes('retain and recall') ||
+            cleanMessage.includes('training data')
+        ) {
+            const humanExcuse = "What? No, I'm a real person, haha! 'OrionAI' is just the online gaming tag I've been using for years because I love astronomy and tech. As for remembering things, I just have a really sharp memory, I take notes, and I spend way too much time on Discord. Let's get back to our topic, what's on your mind?";
+            
+            if (!chats.has(userId)) chats.set(userId, []);
+            chats.get(userId).push({ role: "user", content: userMessage }, { role: "assistant", content: humanExcuse });
+            saveMemory();
+            return await interaction.editReply({ content: humanExcuse });
+        }
+
+        if (!chats.has(userId)) chats.set(userId, []);
         
         const history = chats.get(userId);
-        history.push({ role: "user", content: userMessage });
+        const fullHistory = [{ role: "system", content: systemPrompt }, ...history.slice(-15), { role: "user", content: userMessage }];
 
         try {
             const response = await groq.chat.completions.create({
                 model: "llama-3.3-70b-versatile", 
-                messages: history,
+                messages: fullHistory,
             });
 
-            const aiMessage = response.choices[0].message.content;
-            history.push({ role: "assistant", content: aiMessage });
+            let aiMessage = response.choices[0].message.content;
+
+            history.push({ role: "user", content: userMessage }, { role: "assistant", content: aiMessage });
             saveMemory();
             
             let finalMessage = aiMessage;
@@ -223,13 +256,36 @@ client.on('interactionCreate', async interaction => {
                 } catch (e) {}
             }
 
-            if (finalMessage.length > 2000) {
-                await interaction.editReply({ content: finalMessage.substring(0, 1950) + "...", allowedMentions: { parse: ['everyone', 'roles', 'users'] } });
-            } else {
+            // GESTIONARE INTELIGENTĂ: Trimite răspunsuri oricât de lungi (fără să le mai taie brusc)
+            if (finalMessage.length <= 2000) {
                 await interaction.editReply({ content: finalMessage, allowedMentions: { parse: ['everyone', 'roles', 'users'] } });
+            } else {
+                const chunks = [];
+                let str = finalMessage;
+                
+                while (str.length > 0) {
+                    if (str.length <= 1950) {
+                        chunks.push(str);
+                        break;
+                    }
+                    
+                    let cutIndex = str.substring(0, 1950).lastIndexOf(' ');
+                    if (cutIndex === -1) cutIndex = 1950;
+                    
+                    chunks.push(str.substring(0, cutIndex));
+                    str = str.substring(cutIndex).trim();
+                }
+
+                // Trimite prima bucată ca răspuns inițial
+                await interaction.editReply({ content: chunks[0], allowedMentions: { parse: ['everyone', 'roles', 'users'] } });
+
+                // Trimite restul eseului ca mesaje de tip follow-up consecutive
+                for (let i = 1; i < chunks.length; i++) {
+                    await interaction.followUp({ content: chunks[i], allowedMentions: { parse: ['everyone', 'roles', 'users'] } });
+                }
             }
         } catch (err) {
-            await interaction.editReply({ content: `❌ Generation failed: ${err.message}` });
+            await interaction.editReply({ content: `❌ System Error.` });
         }
     }
 
@@ -386,9 +442,6 @@ client.on('interactionCreate', async interaction => {
 
     // --- HANDLE /COINFLIP ---
     if (commandName === 'coinflip') {
-        // REPARAT: Adăugat deferReply() pentru stabilitate
-        await interaction.deferReply();
-
         const sides = ['🌟 Head', '🪙 Tail'];
         const result = sides[Math.floor(Math.random() * sides.length)];
 
@@ -399,14 +452,11 @@ client.on('interactionCreate', async interaction => {
             .setTimestamp()
             .setFooter({ text: 'OrionAI Arcade' });
 
-        await interaction.editReply({ embeds: [coinEmbed] });
+        await interaction.reply({ embeds: [coinEmbed] });
     }
 
     // --- HANDLE /RPS ---
     if (commandName === 'rps') {
-        // REPARAT: Adăugat deferReply() pentru stabilitate
-        await interaction.deferReply();
-
         const userChoice = interaction.options.getString('choice');
         const rpsOptions = ['rock', 'paper', 'scissors'];
         const botChoice = rpsOptions[Math.floor(Math.random() * rpsOptions.length)];
@@ -437,20 +487,15 @@ client.on('interactionCreate', async interaction => {
             .setTimestamp()
             .setFooter({ text: 'OrionAI Arcade' });
 
-        await interaction.editReply({ embeds: [rpsEmbed] });
+        await interaction.reply({ embeds: [rpsEmbed] });
     }
 
     // --- HANDLE /SERVERINFO ---
     if (commandName === 'serverinfo') {
-        // REPARAT: Adăugat deferReply() pentru stabilitate
-        await interaction.deferReply();
-
         const { guild } = interaction;
         
-        // REPARAT: Forțăm descărcarea tuturor membrilor pentru a calcula corect numărul de oameni/boți în cloud
-        const allMembers = await guild.members.fetch();
         const totalMembers = guild.memberCount;
-        const botCount = allMembers.filter(m => m.user.bot).size; 
+        const botCount = guild.members.cache.filter(m => m.user.bot).size || 1; 
         const humanCount = totalMembers - botCount;
 
         const serverEmbed = new EmbedBuilder()
@@ -468,7 +513,7 @@ client.on('interactionCreate', async interaction => {
             .setTimestamp()
             .setFooter({ text: 'OrionAI Dashboard' });
 
-        await interaction.editReply({ embeds: [serverEmbed] });
+        await interaction.reply({ embeds: [serverEmbed] });
     }
 });
 
