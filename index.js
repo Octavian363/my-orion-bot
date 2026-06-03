@@ -137,8 +137,8 @@ const commands = [
 
 // 3. BOT READY EVENT
 client.once('ready', async () => {
-    // Schimbat și textul din consolă pentru a reflecta modelul activ curent
-    console.log(`🔒 OrionAI is online and connected to Groq (Llama 3.3 SpecDec)! Connected as: ${client.user.tag}`);
+    // ACTUALIZAT: Modificat textul din consolă pentru a reflecta noul model stabil
+    console.log(`🔒 OrionAI is online and connected to Groq (Llama 3 70B)! Connected as: ${client.user.tag}`);
     loadMemory();
 
     const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
@@ -253,7 +253,7 @@ client.on('interactionCreate', async interaction => {
 
         try {
             const response = await groq.chat.completions.create({
-                model: "llama-3.3-70b-specdec", // FIX 1: Actualizat din versatile în specdec
+                model: "llama3-70b-8192", // MODIFICAT 1: Trecut pe modelul stabil pe termen lung
                 messages: fullHistory,
                 temperature: 0.7
             });
@@ -350,7 +350,7 @@ client.on('interactionCreate', async interaction => {
         let roastMessage = "Pack your bags.";
         try {
             const roastResponse = await groq.chat.completions.create({
-                model: "llama-3.3-70b-specdec", // FIX 2: Actualizat din versatile în specdec
+                model: "llama3-70b-8192", // MODIFICAT 2: Trecut pe modelul stabil pe termen lung
                 messages: [
                     { role: "system", content: "You are a savage, funny, and incredibly witty AI. Write a short 1-2 sentence brutal roast for a Discord user getting kicked. No emojis." },
                     { role: "user", content: `Roast ${targetUser.username}. Topic: ${topic}.` }
@@ -393,7 +393,7 @@ client.on('interactionCreate', async interaction => {
         let roastMessage = "Banned for eternity.";
         try {
             const roastResponse = await groq.chat.completions.create({
-                model: "llama-3.3-70b-specdec", // FIX 3: Actualizat din versatile în specdec
+                model: "llama3-70b-8192", // MODIFICAT 3: Trecut pe modelul stabil pe termen lung
                 messages: [
                     { role: "system", content: "You are an extremely savage, ruthless and witty AI. Write a devastating 1-2 sentence roast for a Discord user getting permanently banned. No emojis." },
                     { role: "user", content: `Write a final brutal ban roast for ${targetUser.username}. Reason/Topic: ${topic}.` }
@@ -439,7 +439,7 @@ client.on('interactionCreate', async interaction => {
             let mercyMessage = "You have been given a second chance.";
             try {
                 const aiResponse = await groq.chat.completions.create({
-                    model: "llama-3.3-70b-specdec", // FIX 4: Actualizat din versatile în specdec
+                    model: "llama3-70b-8192", // MODIFICAT 4: Trecut pe modelul stabil pe termen lung
                     messages: [
                         { role: "system", content: "You are a smart, slightly sarcastic but generous AI bot. Write a short 1-sentence witty or funny message welcoming back a user who just got unbanned. No emojis." },
                         { role: "user", content: `Write a welcome back line for the user ${bannedUser.username}.` }
