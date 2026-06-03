@@ -2,7 +2,7 @@
 const path = require('path');
 
 // ==========================================
-// 1. CONFIGURARE DINAMICĂ MEDIU (CRUCIALĂ PT CLOUD)
+// 1. CONFIGURARE DINAMICĂ MEDIU
 // ==========================================
 if (fs.existsSync('./bot.env')) {
     require('dotenv').config({ path: './bot.env' });
@@ -147,10 +147,10 @@ const commands = [
 ].map(command => command.toJSON());
 
 // ==========================================
-// 3. EVENIMENT INIȚIALIZARE BOT (READY)
+// 3. EVENIMENT READY
 // ==========================================
 client.once('ready', async () => {
-    console.log(`🔒 OrionAI is online and connected to Groq (Llama 3 70B)! Connected as: ${client.user.tag}`);
+    console.log(`🔒 OrionAI is online and connected to Groq (Llama 3.3 70B)! Connected as: ${client.user.tag}`);
     loadMemory();
 
     const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
@@ -163,7 +163,7 @@ client.once('ready', async () => {
     }
 });
 
-// EVENIMENT WELCOME
+// WELCOME EVENT
 client.on('guildMemberAdd', async member => {
     const welcomeChannel = member.guild.channels.cache.find(ch => ch.name === WELCOME_CHANNEL_NAME);
     if (!welcomeChannel) return;
@@ -184,7 +184,7 @@ client.on('guildMemberAdd', async member => {
 });
 
 // ==========================================
-// 4. MODUL AUTOMOD (FILTRU REVIZUIT)
+// 4. AUTOMOD
 // ==========================================
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
@@ -206,7 +206,7 @@ client.on('messageCreate', async message => {
 });
 
 // ==========================================
-// 5. GESTIONARE INTERACȚIUNI & COMANDE
+// 5. GESTIONARE INTERACȚIUNI
 // ==========================================
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
@@ -214,14 +214,13 @@ client.on('interactionCreate', async interaction => {
     const { commandName } = interaction;
     const userId = interaction.user.id;
 
-    // --- LOGICA /ASK ---
+    // --- HANDLE /ASK ---
     if (commandName === 'ask') {
         const userMessage = interaction.options.getString('message');
         await interaction.deferReply();
 
         const cleanMessage = userMessage.toLowerCase().trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g," ");
 
-        // [Filtru 1] Saluturi simple statically returnate
         if (/^(hello|helo|hi)$/i.test(cleanMessage.replace(/\s+/g, ''))) {
             const staticReply = "Hello! My name is OrionAI and I'm ready to help you.";
             if (!chats.has(userId)) chats.set(userId, []);
@@ -230,7 +229,6 @@ client.on('interactionCreate', async interaction => {
             return await interaction.editReply({ content: staticReply });
         }
 
-        // [Filtru 2] Identity Guard (Scutul Anti-AI)
         if (
             /\byou\b.*\ban\b.*\bai\b/i.test(cleanMessage) || 
             /\bare\b.*\byou\b.*\bai\b/i.test(cleanMessage) || 
@@ -265,7 +263,7 @@ client.on('interactionCreate', async interaction => {
 
         try {
             const response = await groq.chat.completions.create({
-                model: "llama3-70b-8192", 
+                model: "llama-3.3-70b-versatile", // FIX: Înlocuit modelul retras cu cel nou și activ
                 messages: fullHistory,
                 temperature: 0.7
             });
@@ -282,7 +280,6 @@ client.on('interactionCreate', async interaction => {
             
             let finalMessage = aiMessage;
 
-            // Verificare pentru pings globale la cuvinte cheie
             const words = userMessage.toLowerCase().split(/\s+/);
             if (words.includes('all') || words.includes('everyone')) {
                 try {
@@ -292,7 +289,6 @@ client.on('interactionCreate', async interaction => {
                 } catch (e) {}
             }
 
-            // Gestionare inteligentă a limitei Discord de 2000 caractere
             if (finalMessage.length <= 2000) {
                 await interaction.editReply({ content: finalMessage, allowedMentions: { parse: ['everyone', 'roles', 'users'] } });
             } else {
@@ -324,7 +320,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- LOGICA /RESET ---
+    // --- HANDLE /RESET ---
     if (commandName === 'reset') {
         if (chats.has(userId)) {
             chats.delete(userId);
@@ -335,7 +331,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- LOGICA /CLEAR ---
+    // --- HANDLE /CLEAR ---
     if (commandName === 'clear') {
         const amount = interaction.options.getInteger('amount');
         if (amount < 1 || amount > 100) return interaction.reply({ content: '❌ You can only delete between 1 and 100 messages at a time.', ephemeral: true });
@@ -347,7 +343,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- LOGICA /KICK ---
+    // --- HANDLE /KICK ---
     if (commandName === 'kick') {
         const targetUser = interaction.options.getUser('target');
         const topic = interaction.options.getString('topic') || 'general bad behavior';
@@ -361,7 +357,7 @@ client.on('interactionCreate', async interaction => {
         let roastMessage = "Pack your bags.";
         try {
             const roastResponse = await groq.chat.completions.create({
-                model: "llama3-70b-8192",
+                model: "llama-3.3-70b-versatile",
                 messages: [
                     { role: "system", content: "You are a savage, funny, and incredibly witty AI. Write a short 1-2 sentence brutal roast for a Discord user getting kicked. No emojis." },
                     { role: "user", content: `Roast ${targetUser.username}. Topic: ${topic}.` }
@@ -390,7 +386,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- LOGICA /BAN ---
+    // --- HANDLE /BAN ---
     if (commandName === 'ban') {
         const targetUser = interaction.options.getUser('target');
         const topic = interaction.options.getString('topic') || 'violating server rules';
@@ -404,7 +400,7 @@ client.on('interactionCreate', async interaction => {
         let roastMessage = "Banned for eternity.";
         try {
             const roastResponse = await groq.chat.completions.create({
-                model: "llama3-70b-8192",
+                model: "llama-3.3-70b-versatile",
                 messages: [
                     { role: "system", content: "You are an extremely savage, ruthless and witty AI. Write a devastating 1-2 sentence roast for a Discord user getting permanently banned. No emojis." },
                     { role: "user", content: `Write a final brutal ban roast for ${targetUser.username}. Reason/Topic: ${topic}.` }
@@ -433,7 +429,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- LOGICA /UNBAN ---
+    // --- HANDLE /UNBAN ---
     if (commandName === 'unban') {
         const inputUsername = interaction.options.getString('username').toLowerCase().trim();
         await interaction.deferReply();
@@ -450,7 +446,7 @@ client.on('interactionCreate', async interaction => {
             let mercyMessage = "You have been given a second chance.";
             try {
                 const aiResponse = await groq.chat.completions.create({
-                    model: "llama3-70b-8192",
+                    model: "llama-3.3-70b-versatile",
                     messages: [
                         { role: "system", content: "You are a smart, slightly sarcastic but generous AI bot. Write a short 1-sentence witty or funny message welcoming back a user who just got unbanned. No emojis." },
                         { role: "user", content: `Write a welcome back line for the user ${bannedUser.username}.` }
@@ -474,7 +470,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- LOGICA /COINFLIP ---
+    // --- HANDLE /COINFLIP ---
     if (commandName === 'coinflip') {
         const sides = ['🌟 Head', '🪙 Tail'];
         const result = sides[Math.floor(Math.random() * sides.length)];
@@ -489,7 +485,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ embeds: [coinEmbed] });
     }
 
-    // --- LOGICA /RPS ---
+    // --- HANDLE /RPS ---
     if (commandName === 'rps') {
         const userChoice = interaction.options.getString('choice');
         const rpsOptions = ['rock', 'paper', 'scissors'];
@@ -524,7 +520,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ embeds: [rpsEmbed] });
     }
 
-    // --- LOGICA /SERVERINFO ---
+    // --- HANDLE /SERVERINFO ---
     if (commandName === 'serverinfo') {
         await interaction.deferReply();
         const { guild } = interaction;
