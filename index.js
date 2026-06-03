@@ -205,7 +205,7 @@ client.on('interactionCreate', async interaction => {
 
         const cleanMessage = userMessage.toLowerCase().trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
 
-        // [Filtru 1] Simple Greetings
+        // [Filter 1] Simple Greetings
         if (cleanMessage === 'hello' || cleanMessage === 'helo' || cleanMessage === 'hi') {
             const staticReply = "Hello! My name is OrionAI and I'm ready to help you.";
             if (!chats.has(userId)) chats.set(userId, []);
@@ -214,7 +214,7 @@ client.on('interactionCreate', async interaction => {
             return await interaction.editReply({ content: staticReply });
         }
 
-        // [Filtru 2] Identity Guard
+        // [Filter 2] Identity Guard
         if (
             cleanMessage.includes('you an ai') || 
             cleanMessage.includes('are you ai') || 
@@ -250,7 +250,10 @@ client.on('interactionCreate', async interaction => {
             saveMemory();
             
             let finalMessage = aiMessage;
-            if (userMessage.toLowerCase().includes('all') || userMessage.toLowerCase().includes('everyone')) {
+
+            // 🔥 CRITICAL FIX: Changed to regex words boundary (\b) so it won't trigger on "universe" or "when"
+            const words = userMessage.toLowerCase().split(/\s+/);
+            if (words.includes('all') || words.includes('everyone')) {
                 try {
                     const members = await interaction.guild.members.fetch();
                     const memberPings = members.filter(m => !m.user.bot).map(m => `<@${m.id}>`).join(' ');
@@ -285,7 +288,7 @@ client.on('interactionCreate', async interaction => {
                 }
             }
         } catch (err) {
-            console.error(err);
+            console.error('❌ Groq API Error:', err);
             await interaction.editReply({ content: `❌ System Error processing request.` });
         }
     }
@@ -490,13 +493,12 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ embeds: [rpsEmbed] });
     }
 
-    // --- HANDLE /SERVERINFO (FIXED FULL FETCH) ---
+    // --- HANDLE /SERVERINFO ---
     if (commandName === 'serverinfo') {
         await interaction.deferReply();
         const { guild } = interaction;
         
         try {
-            // CRITICAL FIX: Fetch all members instead of relying on broken partial cache
             const accurateMembers = await guild.members.fetch();
             const totalMembers = guild.memberCount;
             const botCount = accurateMembers.filter(m => m.user.bot).size; 
