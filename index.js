@@ -5,11 +5,10 @@ const Groq = require('groq-sdk');
 const fs = require('fs');
 const path = require('path');
 
-// 1. CONFIGURATION (Secured via process.env)
+// 1. CONFIGURATION
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY; 
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
-
 const WELCOME_CHANNEL_NAME = "general"; 
 
 const client = new Client({ 
@@ -24,9 +23,10 @@ const client = new Client({
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 let chats = new Map();
 
-const BANNED_WORDS = ['scamlink', 'free-nitro', 'discord.gg/', 'http://', 'https://'];
+// Splitting scams from basic links to avoid accidental triggers
+const BANNED_PHRASES = ['scamlink', 'free-nitro'];
+const BANNED_LINKS = ['discord.gg/', 'http://', 'https://'];
 
-// System prompt puternic pentru conversații naturale, detaliate și ascunderea identității de robot
 const systemPrompt = "You are OrionAI, a real human and an expert tech enthusiast chatting on Discord. Converse strictly in English. Provide highly detailed, deep, and expanded answers. You must NEVER admit, imply, or hint that you are an AI, robot, software, or a language model. Never use corporate phrases like 'I am a helpful assistant' or 'how I provide information'. Speak like a real person.";
 
 function loadMemory() {
@@ -42,6 +42,7 @@ function loadMemory() {
             chats = new Map();
         }
     } catch (error) {
+        console.error('❌ Failed to load memory:', error);
         chats = new Map();
     }
 }
@@ -50,7 +51,9 @@ function saveMemory() {
     try {
         const obj = Object.fromEntries(chats);
         fs.writeFileSync(MEMORY_FILE, JSON.stringify(obj, null, 2), 'utf8');
-    } catch (error) {}
+    } catch (error) {
+        console.error('❌ Failed to save memory to disk:', error);
+    }
 }
 
 // 2. DEFINE ALL SLASH COMMANDS
@@ -151,10 +154,7 @@ client.once('ready', async () => {
 // WELCOME EVENT
 client.on('guildMemberAdd', async member => {
     const welcomeChannel = member.guild.channels.cache.find(ch => ch.name === WELCOME_CHANNEL_NAME);
-    if (!welcomeChannel) {
-        console.log(`⚠️ Could not find a text channel named "${WELCOME_CHANNEL_NAME}" to send the welcome card.`);
-        return;
-    }
+    if (!welcomeChannel) return;
 
     const welcomeEmbed = new EmbedBuilder()
         .setColor('#00FF00') 
@@ -174,17 +174,20 @@ client.on('guildMemberAdd', async member => {
 // 4. AUTOMOD
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
+    if (message.member?.permissions.has(PermissionFlagsBits.Administrator)) return;
 
     const lowerContent = message.content.toLowerCase();
-    const containsBanned = BANNED_WORDS.some(word => lowerContent.includes(word));
+    const containsPhrase = BANNED_PHRASES.some(word => lowerContent.includes(word));
+    const containsLink = BANNED_LINKS.some(link => lowerContent.includes(link));
 
-    if (containsBanned) {
-        if (message.member.permissions.has(PermissionFlagsBits.Administrator)) return;
+    if (containsPhrase || containsLink) {
         try {
             await message.delete();
-            const warning = await message.channel.send(`⚠️ <@${message.author.id}>, your message was removed automatically because it contained a restricted link or phrase.`);
+            const warning = await message.channel.send(`⚠️ <@${message.author.id}>, your message was removed because it contained restricted content.`);
             setTimeout(() => warning.delete().catch(() => {}), 5000);
-        } catch (error) {}
+        } catch (error) {
+            console.error('Failed to delete AutoMod message:', error);
+        }
     }
 });
 
@@ -193,25 +196,25 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName } = interaction;
+    const userId = interaction.user.id;
 
     // --- HANDLE /ASK ---
     if (commandName === 'ask') {
         const userMessage = interaction.options.getString('message');
-        const userId = interaction.user.id;
         await interaction.deferReply();
 
         const cleanMessage = userMessage.toLowerCase().trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
 
-        // [Filtru 1] Verificare pentru saluturi simple
+        // [Filtru 1] Simple Greetings
         if (cleanMessage === 'hello' || cleanMessage === 'helo' || cleanMessage === 'hi') {
-            const staticReply = "Hello! My name is OrionAI and im ready to help you";
+            const staticReply = "Hello! My name is OrionAI and I'm ready to help you.";
             if (!chats.has(userId)) chats.set(userId, []);
             chats.get(userId).push({ role: "user", content: userMessage }, { role: "assistant", content: staticReply });
             saveMemory();
             return await interaction.editReply({ content: staticReply });
         }
 
-        // [Filtru 2] Interceptare întrebări legate de identitate robot, AI sau memorie tehnică
+        // [Filtru 2] Identity Guard
         if (
             cleanMessage.includes('you an ai') || 
             cleanMessage.includes('are you ai') || 
@@ -243,7 +246,6 @@ client.on('interactionCreate', async interaction => {
             });
 
             let aiMessage = response.choices[0].message.content;
-
             history.push({ role: "user", content: userMessage }, { role: "assistant", content: aiMessage });
             saveMemory();
             
@@ -256,7 +258,7 @@ client.on('interactionCreate', async interaction => {
                 } catch (e) {}
             }
 
-            // GESTIONARE INTELIGENTĂ: Trimite răspunsuri oricât de lungi (fără să le mai taie brusc)
+            // Smart Text Chunking (Max 2000 Character Limits)
             if (finalMessage.length <= 2000) {
                 await interaction.editReply({ content: finalMessage, allowedMentions: { parse: ['everyone', 'roles', 'users'] } });
             } else {
@@ -276,22 +278,20 @@ client.on('interactionCreate', async interaction => {
                     str = str.substring(cutIndex).trim();
                 }
 
-                // Trimite prima bucată ca răspuns inițial
                 await interaction.editReply({ content: chunks[0], allowedMentions: { parse: ['everyone', 'roles', 'users'] } });
 
-                // Trimite restul eseului ca mesaje de tip follow-up consecutive
                 for (let i = 1; i < chunks.length; i++) {
                     await interaction.followUp({ content: chunks[i], allowedMentions: { parse: ['everyone', 'roles', 'users'] } });
                 }
             }
         } catch (err) {
-            await interaction.editReply({ content: `❌ System Error.` });
+            console.error(err);
+            await interaction.editReply({ content: `❌ System Error processing request.` });
         }
     }
 
     // --- HANDLE /RESET ---
     if (commandName === 'reset') {
-        const userId = interaction.user.id;
         if (chats.has(userId)) {
             chats.delete(userId);
             saveMemory();
@@ -350,7 +350,7 @@ client.on('interactionCreate', async interaction => {
         try {
             await targetUser.send({ embeds: [kickEmbed] }).catch(() => {});
             await targetMember.kick(`AI Roast: ${roastMessage.substring(0, 450)}`);
-            await interaction.editReply({ content: `💥 **${targetUser.tag}** has been officially booted! Here is their parting card:`, embeds: [kickEmbed] });
+            await interaction.editReply({ content: `💥 **${targetUser.tag}** has been officially booted!`, embeds: [kickEmbed] });
         } catch (error) {
             await interaction.editReply({ content: '❌ Error executing kick.' });
         }
@@ -393,7 +393,7 @@ client.on('interactionCreate', async interaction => {
         try {
             await targetUser.send({ embeds: [banEmbed] }).catch(() => {});
             await interaction.guild.members.ban(targetUser.id, { reason: `AI Roast: ${roastMessage}`, deleteMessageSeconds: 86400 });
-            await interaction.editReply({ content: `⚡ **The Ban Hammer has dropped!** Goodbye, user.`, embeds: [banEmbed] });
+            await interaction.editReply({ content: `⚡ **The Ban Hammer has dropped!**`, embeds: [banEmbed] });
         } catch (error) {
             await interaction.editReply({ content: '❌ Error executing ban.' });
         }
@@ -409,7 +409,7 @@ client.on('interactionCreate', async interaction => {
             const bannedInfo = banList.find(b => b.user.username.toLowerCase() === inputUsername);
 
             if (!bannedInfo) {
-                return interaction.editReply({ content: `❌ I could not find any banned user with the exact username **"${inputUsername}"**. Please make sure the letters match!` });
+                return interaction.editReply({ content: `❌ I could not find any banned user with the username **"${inputUsername}"**.` });
             }
 
             const bannedUser = bannedInfo.user;
@@ -430,7 +430,7 @@ client.on('interactionCreate', async interaction => {
             const unbanEmbed = new EmbedBuilder()
                 .setColor('#00AAFF') 
                 .setTitle('🔓 THE BAN HAS BEEN REVOKED!')
-                .setDescription(`**${bannedUser.tag}** has been successfully unbanned and can rejoin the server!`)
+                .setDescription(`**${bannedUser.tag}** has been successfully unbanned!`)
                 .addFields({ name: '🕊️ OrionAI\'s Second Chance Message', value: `*"${mercyMessage}"*` })
                 .setTimestamp();
 
@@ -448,7 +448,7 @@ client.on('interactionCreate', async interaction => {
         const coinEmbed = new EmbedBuilder()
             .setColor('#FFD700') 
             .setTitle('🪙 Coin Flip Result')
-            .setDescription(`<@${interaction.user.id}> flipped a coin and it landed on:\n\n**${result}**!`)
+            .setDescription(`<@${userId}> flipped a coin and it landed on:\n\n**${result}**!`)
             .setTimestamp()
             .setFooter({ text: 'OrionAI Arcade' });
 
@@ -490,30 +490,38 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ embeds: [rpsEmbed] });
     }
 
-    // --- HANDLE /SERVERINFO ---
+    // --- HANDLE /SERVERINFO (FIXED FULL FETCH) ---
     if (commandName === 'serverinfo') {
+        await interaction.deferReply();
         const { guild } = interaction;
         
-        const totalMembers = guild.memberCount;
-        const botCount = guild.members.cache.filter(m => m.user.bot).size || 1; 
-        const humanCount = totalMembers - botCount;
+        try {
+            // CRITICAL FIX: Fetch all members instead of relying on broken partial cache
+            const accurateMembers = await guild.members.fetch();
+            const totalMembers = guild.memberCount;
+            const botCount = accurateMembers.filter(m => m.user.bot).size; 
+            const humanCount = totalMembers - botCount;
 
-        const serverEmbed = new EmbedBuilder()
-            .setColor('#34495E')
-            .setTitle(`📊 Server Info: ${guild.name}`)
-            .setThumbnail(guild.iconURL({ dynamic: true }) || client.user.displayAvatarURL())
-            .addFields(
-                { name: '👑 Owner', value: `<@${guild.ownerId}>`, inline: true },
-                { name: '📅 Created On', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: true },
-                { name: '🆔 Server ID', value: `\`${guild.id}\``, inline: true },
-                { name: '👥 Total Members', value: `**${totalMembers}** total\n🧑 Humans: ${humanCount}\n🤖 Bots: ${botCount}`, inline: false },
-                { name: '💬 Total Channels', value: `📁 Text/Voice: **${guild.channels.cache.size}**`, inline: true },
-                { name: '🛡️ Roles Count', value: `🎨 **${guild.roles.cache.size}** roles`, inline: true }
-            )
-            .setTimestamp()
-            .setFooter({ text: 'OrionAI Dashboard' });
+            const serverEmbed = new EmbedBuilder()
+                .setColor('#34495E')
+                .setTitle(`📊 Server Info: ${guild.name}`)
+                .setThumbnail(guild.iconURL({ dynamic: true }) || client.user.displayAvatarURL())
+                .addFields(
+                    { name: '👑 Owner', value: `<@${guild.ownerId}>`, inline: true },
+                    { name: '📅 Created On', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: true },
+                    { name: '🆔 Server ID', value: `\`${guild.id}\``, inline: true },
+                    { name: '👥 Total Members', value: `**${totalMembers}** total\n🧑 Humans: ${humanCount}\n🤖 Bots: ${botCount}`, inline: false },
+                    { name: '💬 Total Channels', value: `📁 Text/Voice: **${guild.channels.cache.size}**`, inline: true },
+                    { name: '🛡️ Roles Count', value: `🎨 **${guild.roles.cache.size}** roles`, inline: true }
+                )
+                .setTimestamp()
+                .setFooter({ text: 'OrionAI Dashboard' });
 
-        await interaction.reply({ embeds: [serverEmbed] });
+            await interaction.editReply({ embeds: [serverEmbed] });
+        } catch (err) {
+            console.error(err);
+            await interaction.editReply({ content: '❌ Failed to collect server statistics.' });
+        }
     }
 });
 
