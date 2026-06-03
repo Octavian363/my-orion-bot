@@ -23,7 +23,6 @@ const client = new Client({
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 let chats = new Map();
 
-// Splitting scams from basic links to avoid accidental triggers
 const BANNED_PHRASES = ['scamlink', 'free-nitro'];
 const BANNED_LINKS = ['discord.gg/', 'http://', 'https://'];
 
@@ -203,10 +202,9 @@ client.on('interactionCreate', async interaction => {
         const userMessage = interaction.options.getString('message');
         await interaction.deferReply();
 
-        // Păstrăm spațiile intacte pentru potrivirea corectă a cuvintelor
         const cleanMessage = userMessage.toLowerCase().trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g," ");
 
-        // [Filter 1] Simple Greetings (folosind regex exact ca să nu prindă cuvinte mai mari)
+        // [Filter 1] Simple Greetings
         if (/^(hello|helo|hi)$/i.test(cleanMessage.replace(/\s+/g, ''))) {
             const staticReply = "Hello! My name is OrionAI and I'm ready to help you.";
             if (!chats.has(userId)) chats.set(userId, []);
@@ -215,7 +213,7 @@ client.on('interactionCreate', async interaction => {
             return await interaction.editReply({ content: staticReply });
         }
 
-        // [Filter 2] Identity Guard REPARAT COMPLET (folosește \b ca să evite cuvinte gen "universe")
+        // [Filter 2] Identity Guard
         if (
             /\byou\b.*\ban\b.*\bai\b/i.test(cleanMessage) || 
             /\bare\b.*\byou\b.*\bai\b/i.test(cleanMessage) || 
@@ -235,24 +233,44 @@ client.on('interactionCreate', async interaction => {
             return await interaction.editReply({ content: humanExcuse });
         }
 
-        if (!chats.has(userId)) chats.set(userId, []);
+        // SIGURANȚĂ: Inițializăm corect array-ul dacă nu există sau dacă e corupt
+        if (!chats.has(userId) || !Array.isArray(chats.get(userId))) {
+            chats.set(userId, []);
+        }
         
-        const history = chats.get(userId);
-        const fullHistory = [{ role: "system", content: systemPrompt }, ...history.slice(-15), { role: "user", content: userMessage }];
+        let history = chats.get(userId);
+
+        // Curățăm istoricul de eventuale obiecte stricate sau mesaje goale înainte de a trimite la Groq
+        const validHistory = history.filter(msg => msg && msg.role && msg.content);
+
+        // Luăm doar ultimele 10 mesaje pentru a nu supraîncărca contextul API-ului
+        const fullHistory = [
+            { role: "system", content: systemPrompt }, 
+            ...validHistory.slice(-10), 
+            { role: "user", content: userMessage }
+        ];
 
         try {
             const response = await groq.chat.completions.create({
                 model: "llama-3.3-70b-versatile", 
                 messages: fullHistory,
+                temperature: 0.7
             });
 
+            if (!response.choices || response.choices.length === 0) {
+                throw new Error("Groq API a returnat un răspuns gol.");
+            }
+
             let aiMessage = response.choices[0].message.content;
+            
+            // Salvăm în memorie doar după ce ne-am asigurat că avem un răspuns valid
             history.push({ role: "user", content: userMessage }, { role: "assistant", content: aiMessage });
+            chats.set(userId, history);
             saveMemory();
             
             let finalMessage = aiMessage;
 
-            // Verificare sigură pentru pings globale
+            // Verificare pentru pings globale
             const words = userMessage.toLowerCase().split(/\s+/);
             if (words.includes('all') || words.includes('everyone')) {
                 try {
@@ -289,8 +307,9 @@ client.on('interactionCreate', async interaction => {
                 }
             }
         } catch (err) {
-            console.error('❌ Groq API Error:', err);
-            await interaction.editReply({ content: `❌ System Error processing request.` });
+            // Această linie va afișa eroarea REALĂ în logurile Railway
+            console.error('🔴 EROARE CRITICĂ DISCORD/GROQ:', err);
+            await interaction.editReply({ content: `❌ System Error: Conexiune eșuată cu serverul AI sau istoric corupt.` });
         }
     }
 
