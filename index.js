@@ -1,11 +1,20 @@
-﻿require('dotenv').config({ path: './bot.env' });
+﻿const fs = require('fs');
+const path = require('path');
+
+// ==========================================
+// 1. CONFIGURARE DINAMICĂ MEDIU (CRUCIALĂ PT CLOUD)
+// ==========================================
+if (fs.existsSync('./bot.env')) {
+    require('dotenv').config({ path: './bot.env' });
+    console.log('📝 Mod local detectat: S-au încărcat variabilele din bot.env.');
+} else {
+    require('dotenv').config();
+    console.log('☁️ Mod cloud (Railway) detectat: Se folosesc variabilele globale injectate.');
+}
 
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const Groq = require('groq-sdk');
-const fs = require('fs');
-const path = require('path');
 
-// 1. CONFIGURATION
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY; 
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
@@ -55,7 +64,9 @@ function saveMemory() {
     }
 }
 
-// 2. DEFINE ALL SLASH COMMANDS
+// ==========================================
+// 2. DEFINIRE COMANDE SLASH
+// ==========================================
 const commands = [
     new SlashCommandBuilder()
         .setName('ask')
@@ -135,9 +146,10 @@ const commands = [
         .setDescription('Display cool statistics and information about this server')
 ].map(command => command.toJSON());
 
-// 3. BOT READY EVENT
+// ==========================================
+// 3. EVENIMENT INIȚIALIZARE BOT (READY)
+// ==========================================
 client.once('ready', async () => {
-    // ACTUALIZAT: Modificat textul din consolă pentru a reflecta noul model stabil
     console.log(`🔒 OrionAI is online and connected to Groq (Llama 3 70B)! Connected as: ${client.user.tag}`);
     loadMemory();
 
@@ -151,7 +163,7 @@ client.once('ready', async () => {
     }
 });
 
-// WELCOME EVENT
+// EVENIMENT WELCOME
 client.on('guildMemberAdd', async member => {
     const welcomeChannel = member.guild.channels.cache.find(ch => ch.name === WELCOME_CHANNEL_NAME);
     if (!welcomeChannel) return;
@@ -171,7 +183,9 @@ client.on('guildMemberAdd', async member => {
     welcomeChannel.send({ embeds: [welcomeEmbed] }).catch(() => {});
 });
 
-// 4. AUTOMOD
+// ==========================================
+// 4. MODUL AUTOMOD (FILTRU REVIZUIT)
+// ==========================================
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
     if (message.member?.permissions.has(PermissionFlagsBits.Administrator)) return;
@@ -191,21 +205,23 @@ client.on('messageCreate', async message => {
     }
 });
 
-// 5. INTERACTION LOGIC
+// ==========================================
+// 5. GESTIONARE INTERACȚIUNI & COMANDE
+// ==========================================
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName } = interaction;
     const userId = interaction.user.id;
 
-    // --- HANDLE /ASK ---
+    // --- LOGICA /ASK ---
     if (commandName === 'ask') {
         const userMessage = interaction.options.getString('message');
         await interaction.deferReply();
 
         const cleanMessage = userMessage.toLowerCase().trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g," ");
 
-        // [Filter 1] Simple Greetings
+        // [Filtru 1] Saluturi simple statically returnate
         if (/^(hello|helo|hi)$/i.test(cleanMessage.replace(/\s+/g, ''))) {
             const staticReply = "Hello! My name is OrionAI and I'm ready to help you.";
             if (!chats.has(userId)) chats.set(userId, []);
@@ -214,7 +230,7 @@ client.on('interactionCreate', async interaction => {
             return await interaction.editReply({ content: staticReply });
         }
 
-        // [Filter 2] Identity Guard
+        // [Filtru 2] Identity Guard (Scutul Anti-AI)
         if (
             /\byou\b.*\ban\b.*\bai\b/i.test(cleanMessage) || 
             /\bare\b.*\byou\b.*\bai\b/i.test(cleanMessage) || 
@@ -234,17 +250,13 @@ client.on('interactionCreate', async interaction => {
             return await interaction.editReply({ content: humanExcuse });
         }
 
-        // SIGURANȚĂ: Inițializăm corect array-ul dacă nu există sau dacă e corupt
         if (!chats.has(userId) || !Array.isArray(chats.get(userId))) {
             chats.set(userId, []);
         }
         
         let history = chats.get(userId);
-
-        // Curățăm istoricul de eventuale obiecte stricate sau mesaje goale înainte de a trimite la Groq
         const validHistory = history.filter(msg => msg && msg.role && msg.content);
 
-        // Luăm doar ultimele 10 mesaje pentru a nu supraîncărca contextul API-ului
         const fullHistory = [
             { role: "system", content: systemPrompt }, 
             ...validHistory.slice(-10), 
@@ -253,7 +265,7 @@ client.on('interactionCreate', async interaction => {
 
         try {
             const response = await groq.chat.completions.create({
-                model: "llama3-70b-8192", // MODIFICAT 1: Trecut pe modelul stabil pe termen lung
+                model: "llama3-70b-8192", 
                 messages: fullHistory,
                 temperature: 0.7
             });
@@ -264,14 +276,13 @@ client.on('interactionCreate', async interaction => {
 
             let aiMessage = response.choices[0].message.content;
             
-            // Salvăm în memorie doar după ce ne-am asigurat că avem un răspuns valid
             history.push({ role: "user", content: userMessage }, { role: "assistant", content: aiMessage });
             chats.set(userId, history);
             saveMemory();
             
             let finalMessage = aiMessage;
 
-            // Verificare pentru pings globale
+            // Verificare pentru pings globale la cuvinte cheie
             const words = userMessage.toLowerCase().split(/\s+/);
             if (words.includes('all') || words.includes('everyone')) {
                 try {
@@ -281,7 +292,7 @@ client.on('interactionCreate', async interaction => {
                 } catch (e) {}
             }
 
-            // Smart Text Chunking (Max 2000 Character Limits)
+            // Gestionare inteligentă a limitei Discord de 2000 caractere
             if (finalMessage.length <= 2000) {
                 await interaction.editReply({ content: finalMessage, allowedMentions: { parse: ['everyone', 'roles', 'users'] } });
             } else {
@@ -313,7 +324,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- HANDLE /RESET ---
+    // --- LOGICA /RESET ---
     if (commandName === 'reset') {
         if (chats.has(userId)) {
             chats.delete(userId);
@@ -324,7 +335,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- HANDLE /CLEAR ---
+    // --- LOGICA /CLEAR ---
     if (commandName === 'clear') {
         const amount = interaction.options.getInteger('amount');
         if (amount < 1 || amount > 100) return interaction.reply({ content: '❌ You can only delete between 1 and 100 messages at a time.', ephemeral: true });
@@ -336,7 +347,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- HANDLE /KICK ---
+    // --- LOGICA /KICK ---
     if (commandName === 'kick') {
         const targetUser = interaction.options.getUser('target');
         const topic = interaction.options.getString('topic') || 'general bad behavior';
@@ -350,7 +361,7 @@ client.on('interactionCreate', async interaction => {
         let roastMessage = "Pack your bags.";
         try {
             const roastResponse = await groq.chat.completions.create({
-                model: "llama3-70b-8192", // MODIFICAT 2: Trecut pe modelul stabil pe termen lung
+                model: "llama3-70b-8192",
                 messages: [
                     { role: "system", content: "You are a savage, funny, and incredibly witty AI. Write a short 1-2 sentence brutal roast for a Discord user getting kicked. No emojis." },
                     { role: "user", content: `Roast ${targetUser.username}. Topic: ${topic}.` }
@@ -379,7 +390,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- HANDLE /BAN ---
+    // --- LOGICA /BAN ---
     if (commandName === 'ban') {
         const targetUser = interaction.options.getUser('target');
         const topic = interaction.options.getString('topic') || 'violating server rules';
@@ -393,7 +404,7 @@ client.on('interactionCreate', async interaction => {
         let roastMessage = "Banned for eternity.";
         try {
             const roastResponse = await groq.chat.completions.create({
-                model: "llama3-70b-8192", // MODIFICAT 3: Trecut pe modelul stabil pe termen lung
+                model: "llama3-70b-8192",
                 messages: [
                     { role: "system", content: "You are an extremely savage, ruthless and witty AI. Write a devastating 1-2 sentence roast for a Discord user getting permanently banned. No emojis." },
                     { role: "user", content: `Write a final brutal ban roast for ${targetUser.username}. Reason/Topic: ${topic}.` }
@@ -422,7 +433,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- HANDLE /UNBAN ---
+    // --- LOGICA /UNBAN ---
     if (commandName === 'unban') {
         const inputUsername = interaction.options.getString('username').toLowerCase().trim();
         await interaction.deferReply();
@@ -439,7 +450,7 @@ client.on('interactionCreate', async interaction => {
             let mercyMessage = "You have been given a second chance.";
             try {
                 const aiResponse = await groq.chat.completions.create({
-                    model: "llama3-70b-8192", // MODIFICAT 4: Trecut pe modelul stabil pe termen lung
+                    model: "llama3-70b-8192",
                     messages: [
                         { role: "system", content: "You are a smart, slightly sarcastic but generous AI bot. Write a short 1-sentence witty or funny message welcoming back a user who just got unbanned. No emojis." },
                         { role: "user", content: `Write a welcome back line for the user ${bannedUser.username}.` }
@@ -463,7 +474,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- HANDLE /COINFLIP ---
+    // --- LOGICA /COINFLIP ---
     if (commandName === 'coinflip') {
         const sides = ['🌟 Head', '🪙 Tail'];
         const result = sides[Math.floor(Math.random() * sides.length)];
@@ -478,7 +489,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ embeds: [coinEmbed] });
     }
 
-    // --- HANDLE /RPS ---
+    // --- LOGICA /RPS ---
     if (commandName === 'rps') {
         const userChoice = interaction.options.getString('choice');
         const rpsOptions = ['rock', 'paper', 'scissors'];
@@ -513,7 +524,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ embeds: [rpsEmbed] });
     }
 
-    // --- HANDLE /SERVERINFO ---
+    // --- LOGICA /SERVERINFO ---
     if (commandName === 'serverinfo') {
         await interaction.deferReply();
         const { guild } = interaction;
@@ -547,5 +558,7 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// 6. START THE BOT
+// ==========================================
+// 6. PORNIRE CLIENT DISCORD
+// ==========================================
 client.login(DISCORD_TOKEN);
