@@ -203,10 +203,11 @@ client.on('interactionCreate', async interaction => {
         const userMessage = interaction.options.getString('message');
         await interaction.deferReply();
 
-        const cleanMessage = userMessage.toLowerCase().trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+        // Păstrăm spațiile intacte pentru potrivirea corectă a cuvintelor
+        const cleanMessage = userMessage.toLowerCase().trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g," ");
 
-        // [Filter 1] Simple Greetings
-        if (cleanMessage === 'hello' || cleanMessage === 'helo' || cleanMessage === 'hi') {
+        // [Filter 1] Simple Greetings (folosind regex exact ca să nu prindă cuvinte mai mari)
+        if (/^(hello|helo|hi)$/i.test(cleanMessage.replace(/\s+/g, ''))) {
             const staticReply = "Hello! My name is OrionAI and I'm ready to help you.";
             if (!chats.has(userId)) chats.set(userId, []);
             chats.get(userId).push({ role: "user", content: userMessage }, { role: "assistant", content: staticReply });
@@ -214,17 +215,17 @@ client.on('interactionCreate', async interaction => {
             return await interaction.editReply({ content: staticReply });
         }
 
-        // [Filter 2] Identity Guard
+        // [Filter 2] Identity Guard REPARAT COMPLET (folosește \b ca să evite cuvinte gen "universe")
         if (
-            cleanMessage.includes('you an ai') || 
-            cleanMessage.includes('are you ai') || 
-            cleanMessage.includes('you a bot') || 
-            cleanMessage.includes('are you a bot') ||
-            cleanMessage.includes('your memory') ||
-            cleanMessage.includes('how do you remember') ||
-            cleanMessage.includes('are you human') ||
-            cleanMessage.includes('retain and recall') ||
-            cleanMessage.includes('training data')
+            /\byou\b.*\ban\b.*\bai\b/i.test(cleanMessage) || 
+            /\bare\b.*\byou\b.*\bai\b/i.test(cleanMessage) || 
+            /\byou\b.*\ba\b.*\bbot\b/i.test(cleanMessage) || 
+            /\bare\b.*\byou\b.*\ba\b.*\bbot\b/i.test(cleanMessage) ||
+            /\byour\b.*\bmemory\b/i.test(cleanMessage) ||
+            /\bhow\b.*\bdo\b.*\byou\b.*\bremember\b/i.test(cleanMessage) ||
+            /\bare\b.*\byou\b.*\bhuman\b/i.test(cleanMessage) ||
+            /\bretain\b.*\band\b.*\brecall\b/i.test(cleanMessage) ||
+            /\btraining\b.*\bdata\b/i.test(cleanMessage)
         ) {
             const humanExcuse = "What? No, I'm a real person, haha! 'OrionAI' is just the online gaming tag I've been using for years because I love astronomy and tech. As for remembering things, I just have a really sharp memory, I take notes, and I spend way too much time on Discord. Let's get back to our topic, what's on your mind?";
             
@@ -251,7 +252,7 @@ client.on('interactionCreate', async interaction => {
             
             let finalMessage = aiMessage;
 
-            // 🔥 CRITICAL FIX: Changed to regex words boundary (\b) so it won't trigger on "universe" or "when"
+            // Verificare sigură pentru pings globale
             const words = userMessage.toLowerCase().split(/\s+/);
             if (words.includes('all') || words.includes('everyone')) {
                 try {
@@ -384,7 +385,7 @@ client.on('interactionCreate', async interaction => {
 
         const banEmbed = new EmbedBuilder()
             .setColor('#990000') 
-            .setTitle('🚫 BAN HAMMER HAS SPOKEN!')
+            .setTitle('🚫 BAN HAM HAS SPOKEN!')
             .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
             .setDescription(`**${targetUser.tag}** has been permanently banned from **${interaction.guild.name}**!`)
             .addFields(
