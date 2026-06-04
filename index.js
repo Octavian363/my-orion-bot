@@ -34,6 +34,8 @@ let chats = new Map();
 
 const BANNED_PHRASES = ['scamlink', 'free-nitro'];
 const BANNED_LINKS = ['discord.gg/', 'http://', 'https://'];
+// Add the baseline filtered swear words you want to block here (must be in lowercase)
+const SWEAR_WORDS = ['insertbadword1', 'insertbadword2']; 
 
 const systemPrompt = "You are OrionAI, a real human and an expert tech enthusiast chatting on Discord. Converse strictly in English. Provide highly detailed, deep, and expanded answers. You must NEVER admit, imply, or hint that you are an AI, robot, software, or a language model. Never use corporate phrases like 'I am a helpful assistant' or 'how I provide information'. Speak like a real person.";
 
@@ -143,7 +145,23 @@ const commands = [
         ),
     new SlashCommandBuilder()
         .setName('serverinfo')
-        .setDescription('Display cool statistics and information about this server')
+        .setDescription('Display cool statistics and information about this server'),
+    new SlashCommandBuilder()
+        .setName('userinfo')
+        .setDescription('Displays detailed information about a server member')
+        .addUserOption(option =>
+            option.setName('target')
+                .setDescription('The member you want details about')
+                .setRequired(false)
+        ),
+    new SlashCommandBuilder()
+        .setName('photo')
+        .setDescription('Generate a custom photo using AI based on your description')
+        .addStringOption(option =>
+            option.setName('description')
+                .setDescription('Describe the photo you want the AI to create')
+                .setRequired(true)
+        )
 ].map(command => command.toJSON());
 
 // ==========================================
@@ -184,23 +202,71 @@ client.on('guildMemberAdd', async member => {
 });
 
 // ==========================================
-// 4. AUTOMOD
+// 4. AUTOMOD WITH BYPASS DETECTION & PRIVATE WARNINGS
 // ==========================================
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
     if (message.member?.permissions.has(PermissionFlagsBits.Administrator)) return;
 
     const lowerContent = message.content.toLowerCase();
+    
+    // Clean text to bypass bypass tricks: strips away custom characters like @, !, $, *, -, _, spaces, and numbers
+    const cleanContent = lowerContent.replace(/[@!$*0-9\s\-_.]/g, '');
+
     const containsPhrase = BANNED_PHRASES.some(word => lowerContent.includes(word));
     const containsLink = BANNED_LINKS.some(link => lowerContent.includes(link));
+    const containsSwear = SWEAR_WORDS.some(swear => cleanContent.includes(swear) || lowerContent.includes(swear));
 
-    if (containsPhrase || containsLink) {
+    if (containsPhrase || containsLink || containsSwear) {
         try {
-            await message.delete();
-            const warning = await message.channel.send(`⚠️ <@${message.author.id}>, your message was removed because it contained restricted content.`);
-            setTimeout(() => warning.delete().catch(() => {}), 5000);
+            await message.delete().catch(() => {});
+
+            const userId = message.author.id;
+
+            if (!chats.has(userId)) {
+                chats.set(userId, []);
+            }
+            
+            let userSessionData = chats.get(userId);
+            
+            // Check if warning container exists or parse it cleanly
+            if (!userSessionData.warningsCount) {
+                userSessionData.warningsCount = 0;
+            }
+
+            userSessionData.warningsCount += 1;
+            chats.set(userId, userSessionData);
+            saveMemory();
+
+            const chancesLeft = 3 - userSessionData.warningsCount;
+
+            if (chancesLeft > 0) {
+                // Try sending a Private DM message
+                await message.author.send(`⚠️ You used restricted words or links in **${message.guild.name}**. Your message was deleted.\n**You have ${chancesLeft} chances left.** If you break these rules you will be banned for 5 weeks.`).catch(async () => {
+                    // Fallback warning in public channel if member DMs are fully locked
+                    const channelWarn = await message.channel.send(`⚠️ <@${userId}>, check your DMs! Restricted content removed. You have **${chancesLeft}** chances left before a 5-week ban.`);
+                    setTimeout(() => channelWarn.delete().catch(() => {}), 6000);
+                });
+            } else {
+                // 0 chances remaining -> Automated 5 Week Ban (represented via standard server ban)
+                const autoBanEmbed = new EmbedBuilder()
+                    .setColor('#FF0000')
+                    .setTitle('🚫 AUTOMATED AUTOMOD BAN')
+                    .setDescription(`**${message.author.tag}** has been banned for 5 weeks after exhausting all 3 system warnings.`)
+                    .setTimestamp();
+
+                await message.author.send(`❌ You have been banned from **${message.guild.name}** for 5 weeks because you ran out of chances.`).catch(() => {});
+                
+                await message.guild.members.ban(userId, { reason: 'AutoMod: Reached 3 warnings for banned words/phrases/links.' });
+                await message.channel.send({ embeds: [autoBanEmbed] });
+                
+                // Clear warning count back to zero after ban execution
+                userSessionData.warningsCount = 0;
+                chats.set(userId, userSessionData);
+                saveMemory();
+            }
         } catch (error) {
-            console.error('Failed to delete AutoMod message:', error);
+            console.error('Failed to process AutoMod execution:', error);
         }
     }
 });
@@ -263,7 +329,7 @@ client.on('interactionCreate', async interaction => {
 
         try {
             const response = await groq.chat.completions.create({
-                model: "llama-3.3-70b-versatile", // FIX: Înlocuit modelul retras cu cel nou și activ
+                model: "llama-3.3-70b-versatile",
                 messages: fullHistory,
                 temperature: 0.7
             });
@@ -550,6 +616,57 @@ client.on('interactionCreate', async interaction => {
         } catch (err) {
             console.error(err);
             await interaction.editReply({ content: '❌ Failed to collect server statistics.' });
+        }
+    }
+
+    // --- HANDLE /USERINFO ---
+    if (commandName === 'userinfo') {
+        const targetUser = interaction.options.getUser('target') || interaction.user;
+        const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+
+        const infoEmbed = new EmbedBuilder()
+            .setColor('#2ECC71')
+            .setTitle(`👤 User Info: ${targetUser.username}`)
+            .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+            .addFields(
+                { name: '🆔 User ID', value: `\`${targetUser.id}\``, inline: true },
+                { name: '🤖 Is Bot?', value: targetUser.bot ? 'Yes' : 'No', inline: true },
+                { name: '📅 Account Created', value: `<t:${Math.floor(targetUser.createdTimestamp / 1000)}:R>`, inline: false }
+            )
+            .setTimestamp();
+
+        if (targetMember) {
+            infoEmbed.addFields(
+                { name: '📥 Joined Server', value: `<t:${Math.floor(targetMember.joinedTimestamp / 1000)}:R>`, inline: true },
+                { name: '🎨 Roles', value: targetMember.roles.cache.filter(r => r.id !== interaction.guild.id).map(r => `<@&${r.id}>`).join(' ') || 'No roles', inline: false }
+            );
+        }
+
+        await interaction.reply({ embeds: [infoEmbed] });
+    }
+
+    // --- HANDLE /PHOTO ---
+    if (commandName === 'photo') {
+        const description = interaction.options.getString('description');
+        await interaction.deferReply();
+
+        try {
+            const encodedPrompt = encodeURIComponent(description);
+            const randomSeed = Math.floor(Math.random() * 1000000);
+            const imageUrl = `https://image.pollinations.ai/p/${encodedPrompt}?width=1024&height=1024&seed=${randomSeed}&enhance=true`;
+
+            const photoEmbed = new EmbedBuilder()
+                .setColor('#9B59B6')
+                .setTitle(`🎨 OrionAI Image Generator`)
+                .setDescription(`**Prompt:** ${description}`)
+                .setImage(imageUrl)
+                .setTimestamp()
+                .setFooter({ text: `Generated for ${interaction.user.tag}`, iconURL: interaction.user.displayAvatarURL() });
+
+            await interaction.editReply({ embeds: [photoEmbed] });
+        } catch (error) {
+            console.error('Failed to generate image:', error);
+            await interaction.editReply({ content: '❌ System Error: Could not generate the photo. Please try again later.' });
         }
     }
 });
