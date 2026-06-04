@@ -34,23 +34,9 @@ let chats = new Map();
 
 const BANNED_PHRASES = ['scamlink', 'free-nitro'];
 const BANNED_LINKS = ['discord.gg/', 'http://', 'https://'];
-// Add the baseline filtered swear words you want to block here (must be in lowercase)
 const SWEAR_WORDS = [
-    'fuck', 
-    'dracu', 
-    'drac', 
-    'sex', 
-    'cur', 
-    'pizda', 
-    'pula', 
-    'coi', 
-    'coaie', 
-    'sugi', 
-    'suga',
-    'bitch',
-    'muie',
-    'pulicica',
-    'pizduta'
+    'fuck', 'dracu', 'drac', 'sex', 'cur', 'pizda', 'pula', 
+    'coi', 'coaie', 'sugi', 'suga', 'bitch', 'muie', 'pulicica', 'pizduta'
 ];
 
 const systemPrompt = "You are OrionAI, a real human and an expert tech enthusiast chatting on Discord. Converse strictly in English. Provide highly detailed, deep, and expanded answers. You must NEVER admit, imply, or hint that you are an AI, robot, software, or a language model. Never use corporate phrases like 'I am a helpful assistant' or 'how I provide information'. Speak like a real person.";
@@ -218,7 +204,7 @@ client.on('guildMemberAdd', async member => {
 });
 
 // ==========================================
-// 4. AUTOMOD WITH BYPASS DETECTION & PRIVATE WARNINGS
+// 4. AUTOMOD CU AVERTISMENTE GENERATE DE AI
 // ==========================================
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
@@ -226,7 +212,7 @@ client.on('messageCreate', async message => {
 
     const lowerContent = message.content.toLowerCase();
     
-    // Clean text to bypass bypass tricks: strips away custom characters like @, !, $, *, -, _, spaces, and numbers
+    // Curățare text pentru a preveni bypass-ul prin caractere speciale sau spații
     const cleanContent = lowerContent.replace(/[@!$*0-9\s\-_.]/g, '');
 
     const containsPhrase = BANNED_PHRASES.some(word => lowerContent.includes(word));
@@ -235,6 +221,7 @@ client.on('messageCreate', async message => {
 
     if (containsPhrase || containsLink || containsSwear) {
         try {
+            // Ștergem mesajul imediat
             await message.delete().catch(() => {});
 
             const userId = message.author.id;
@@ -245,7 +232,6 @@ client.on('messageCreate', async message => {
             
             let userSessionData = chats.get(userId);
             
-            // Check if warning container exists or parse it cleanly
             if (!userSessionData.warningsCount) {
                 userSessionData.warningsCount = 0;
             }
@@ -257,14 +243,41 @@ client.on('messageCreate', async message => {
             const chancesLeft = 3 - userSessionData.warningsCount;
 
             if (chancesLeft > 0) {
-                // Try sending a Private DM message
-                await message.author.send(`⚠️ You used restricted words or links in **${message.guild.name}**. Your message was deleted.\n**You have ${chancesLeft} chances left.** If you break these rules you will be banned for 5 weeks.`).catch(async () => {
-                    // Fallback warning in public channel if member DMs are fully locked
-                    const channelWarn = await message.channel.send(`⚠️ <@${userId}>, check your DMs! Restricted content removed. You have **${chancesLeft}** chances left before a 5-week ban.`);
-                    setTimeout(() => channelWarn.delete().catch(() => {}), 6000);
+                // --- GENERARE MESAJ PERSONALIZAT PRIN AI (GROQ) ---
+                let aiWarningMessage = `⚠️ You used restricted content. You have ${chancesLeft} chances left.`; // Fallback standard
+                
+                try {
+                    const groqResponse = await groq.chat.completions.create({
+                        model: "llama-3.3-70b-versatile",
+                        messages: [
+                            { 
+                                role: "system", 
+                                content: "You are OrionAI, a real tech enthusiast on Discord. Act like a real, slightly annoyed but protective human mod. Write a direct, strict, and customized short 1-2 sentence warning message in English to a user who just used a swear word, banned phrase, or link. You must clearly state within your sentence that they have EXACTLY " + chancesLeft + " chances left before a 5-week ban. Do not use corporate language." 
+                            },
+                            { 
+                                role: "user", 
+                                content: `Warn the user ${message.author.username} for breaking rules. They have ${chancesLeft} warnings remaining.` 
+                            }
+                        ],
+                        temperature: 0.8
+                    });
+                    
+                    if (groqResponse.choices && groqResponse.choices[0]?.message?.content) {
+                        aiWarningMessage = groqResponse.choices[0].message.content;
+                    }
+                } catch (apiError) {
+                    console.error('Nu s-a putut genera avertismentul prin Groq, se folosește fallback-ul.', apiError);
+                }
+
+                // Trimitere mesaj privat (DM) cu textul generat de AI
+                await message.author.send(`⚠️ **Notification from ${message.guild.name}:**\n${aiWarningMessage}\n\n*Note: Breaking the rules again will result in an automatic 5-week ban.*`).catch(async () => {
+                    // Fallback în canal public dacă DM-urile sunt închise
+                    const channelWarn = await message.channel.send(`⚠️ <@${userId}>, check your DMs! Restricted content removed.\n*"${aiWarningMessage}"*`);
+                    setTimeout(() => channelWarn.delete().catch(() => {}), 8000);
                 });
+
             } else {
-                // 0 chances remaining -> Automated 5 Week Ban (represented via standard server ban)
+                // 0 șanse rămase -> Ban Automatizat pe 5 Săptămâni
                 const autoBanEmbed = new EmbedBuilder()
                     .setColor('#FF0000')
                     .setTitle('🚫 AUTOMATED AUTOMOD BAN')
@@ -276,7 +289,7 @@ client.on('messageCreate', async message => {
                 await message.guild.members.ban(userId, { reason: 'AutoMod: Reached 3 warnings for banned words/phrases/links.' });
                 await message.channel.send({ embeds: [autoBanEmbed] });
                 
-                // Clear warning count back to zero after ban execution
+                // Resetăm contorul după aplicarea banului
                 userSessionData.warningsCount = 0;
                 chats.set(userId, userSessionData);
                 saveMemory();
@@ -318,7 +331,7 @@ client.on('interactionCreate', async interaction => {
             /\bare\b.*\byou\b.*\ba\b.*\bbot\b/i.test(cleanMessage) ||
             /\byour\b.*\bmemory\b/i.test(cleanMessage) ||
             /\bhow\b.*\bdo\b.*\byou\b.*\bremember\b/i.test(cleanMessage) ||
-            /\bare\b.*\byou\b.*\bhuman\b/i.test(cleanMessage) ||
+            /\are\b.*\byou\b.*\bhuman\b/i.test(cleanMessage) ||
             /\bretain\b.*\band\b.*\brecall\b/i.test(cleanMessage) ||
             /\btraining\b.*\bdata\b/i.test(cleanMessage)
         ) {
