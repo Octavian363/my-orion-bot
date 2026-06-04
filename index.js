@@ -69,7 +69,7 @@ function saveMemory() {
 }
 
 // ==========================================
-// 2. DEFINIRE COMANDE SLASH (Inclusiv Noile Comenzi)
+// 2. DEFINIRE COMANDE SLASH
 // ==========================================
 const commands = [
     new SlashCommandBuilder()
@@ -164,7 +164,6 @@ const commands = [
                 .setDescription('Describe the photo you want the AI to create')
                 .setRequired(true)
         ),
-    // --- NOILE COMANDE ADAUGATE ---
     new SlashCommandBuilder()
         .setName('warn')
         .setDescription('Warn a user and log it into the memory file')
@@ -199,7 +198,7 @@ const commands = [
 ].map(command => command.toJSON());
 
 // ==========================================
-// 3. EVENIMENT READY
+// 3. EVENIMENT READY & WELCOME
 // ==========================================
 client.once('ready', async () => {
     console.log(`🔒 OrionAI is online and connected to Groq (Llama 3.3 70B)! Connected as: ${client.user.tag}`);
@@ -215,7 +214,6 @@ client.once('ready', async () => {
     }
 });
 
-// WELCOME EVENT
 client.on('guildMemberAdd', async member => {
     const welcomeChannel = member.guild.channels.cache.find(ch => ch.name === WELCOME_CHANNEL_NAME);
     if (!welcomeChannel) return;
@@ -368,7 +366,7 @@ client.on('interactionCreate', async interaction => {
             /\byour\b.*\bmemory\b/i.test(cleanMessage) ||
             /\bhow\b.*\bdo\b.*\byou\b.*\bremember\b/i.test(cleanMessage) ||
             /\bare\b.*\byou\b.*\bhuman\b/i.test(cleanMessage) ||
-            /\bretain\b.*\band\b.*\brecall\b/i.test(cleanMessage) ||
+            /\bretain\b.*\and\b.*\brecall\b/i.test(cleanMessage) ||
             /\btraining\b.*\bdata\b/i.test(cleanMessage)
         ) {
             const humanExcuse = "What? No, I'm a real person, haha! 'OrionAI' is just the online gaming tag I've been using for years because I love astronomy and tech. As for remembering things, I just have a really sharp memory, I take notes, and I spend way too much time on Discord. Let's get back to our topic, what's on your mind?";
@@ -447,7 +445,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- HANDLE /RESET ---
-    if (commandName === 'reset') {
+    else if (commandName === 'reset') {
         if (userSessionData.history.length > 0) {
             userSessionData.history = [];
             chats.set(userId, userSessionData);
@@ -459,7 +457,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- HANDLE /CLEAR ---
-    if (commandName === 'clear') {
+    else if (commandName === 'clear') {
         const amount = interaction.options.getInteger('amount');
         if (amount < 1 || amount > 100) return interaction.reply({ content: '❌ You can only delete between 1 and 100 messages at a time.', ephemeral: true });
         try {
@@ -471,7 +469,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- HANDLE /KICK ---
-    if (commandName === 'kick') {
+    else if (commandName === 'kick') {
         const targetUser = interaction.options.getUser('target');
         const topic = interaction.options.getString('topic') || 'general bad behavior';
         await interaction.deferReply();
@@ -514,7 +512,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- HANDLE /BAN ---
-    if (commandName === 'ban') {
+    else if (commandName === 'ban') {
         const targetUser = interaction.options.getUser('target');
         const topic = interaction.options.getString('topic') || 'violating server rules';
         await interaction.deferReply();
@@ -538,7 +536,7 @@ client.on('interactionCreate', async interaction => {
 
         const banEmbed = new EmbedBuilder()
             .setColor('#990000') 
-            .setTitle('🚫 BAN HAM HAS SPOKEN!')
+            .setTitle('🚫 BAN HAMMER HAS SPOKEN!')
             .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
             .setDescription(`**${targetUser.tag}** has been permanently banned from **${interaction.guild.name}**!`)
             .addFields(
@@ -557,7 +555,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- HANDLE /UNBAN ---
-    if (commandName === 'unban') {
+    else if (commandName === 'unban') {
         const inputUsername = interaction.options.getString('username').toLowerCase().trim();
         await interaction.deferReply();
 
@@ -598,7 +596,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- HANDLE /COINFLIP ---
-    if (commandName === 'coinflip') {
+    else if (commandName === 'coinflip') {
         const sides = ['🌟 Head', '🪙 Tail'];
         const result = sides[Math.floor(Math.random() * sides.length)];
 
@@ -613,7 +611,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- HANDLE /RPS ---
-    if (commandName === 'rps') {
+    else if (commandName === 'rps') {
         const userChoice = interaction.options.getString('choice');
         const rpsOptions = ['rock', 'paper', 'scissors'];
         const botChoice = rpsOptions[Math.floor(Math.random() * rpsOptions.length)];
@@ -648,7 +646,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- HANDLE /SERVERINFO ---
-    if (commandName === 'serverinfo') {
+    else if (commandName === 'serverinfo') {
         await interaction.deferReply();
         const { guild } = interaction;
         
@@ -681,194 +679,119 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- HANDLE /USERINFO ---
-    if (commandName === 'userinfo') {
+    else if (commandName === 'userinfo') {
         const targetUser = interaction.options.getUser('target') || interaction.user;
         const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
-        const infoEmbed = new EmbedBuilder()
+        const userEmbed = new EmbedBuilder()
             .setColor('#2ECC71')
-            .setTitle(`👤 User Info: ${targetUser.username}`)
+            .setTitle(`👤 User Info: ${targetUser.tag}`)
             .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
             .addFields(
                 { name: '🆔 User ID', value: `\`${targetUser.id}\``, inline: true },
                 { name: '🤖 Is Bot?', value: targetUser.bot ? 'Yes' : 'No', inline: true },
                 { name: '📅 Account Created', value: `<t:${Math.floor(targetUser.createdTimestamp / 1000)}:R>`, inline: false }
             )
-            .setTimestamp();
+            .setTimestamp()
+            .setFooter({ text: 'OrionAI Registry' });
 
         if (targetMember) {
-            infoEmbed.addFields(
+            userEmbed.addFields(
                 { name: '📥 Joined Server', value: `<t:${Math.floor(targetMember.joinedTimestamp / 1000)}:R>`, inline: true },
-                { name: '🎨 Roles', value: targetMember.roles.cache.filter(r => r.id !== interaction.guild.id).map(r => `<@&${r.id}>`).join(' ') || 'No roles', inline: false }
+                { name: '🎨 Highest Role', value: `${targetMember.roles.highest}`, inline: true }
             );
         }
 
-        await interaction.reply({ embeds: [infoEmbed] });
+        await interaction.reply({ embeds: [userEmbed] });
     }
 
     // --- HANDLE /PHOTO ---
-    if (commandName === 'photo') {
-        const description = interaction.options.getString('description');
-        await interaction.deferReply();
-
-        try {
-            const encodedPrompt = encodeURIComponent(description);
-            const randomSeed = Math.floor(Math.random() * 1000000);
-            const imageUrl = `https://image.pollinations.ai/p/${encodedPrompt}?width=1024&height=1024&seed=${randomSeed}&enhance=true`;
-
-            const photoEmbed = new EmbedBuilder()
-                .setColor('#9B59B6')
-                .setTitle('🎨 Custom AI Photo Generated')
-                .setDescription(`**Prompt:** ${description}`)
-                .setImage(imageUrl)
-                .setTimestamp()
-                .setFooter({ text: 'Powered by Pollinations AI' });
-
-            await interaction.editReply({ embeds: [photoEmbed] });
-        } catch (error) {
-            await interaction.editReply({ content: '❌ Error generating image. Pollinations service might be busy.' });
-        }
+    else if (commandName === 'photo') {
+        await interaction.reply({ content: '🎨 Feature incoming! Image generation is currently undergoing maintenance.', ephemeral: true });
     }
 
-    // ========================================================================
-    // LOGICA NOUĂ PENTRU CELE 6 COMANDE ADAUGATE 
-    // ========================================================================
-
     // --- HANDLE /WARN ---
-    if (commandName === 'warn') {
+    else if (commandName === 'warn') {
         const targetUser = interaction.options.getUser('target');
-        const reason = interaction.options.getString('reason') || 'No reason provided.';
-        
-        if (targetUser.bot) return interaction.reply({ content: "❌ You cannot warn a bot.", ephemeral: true });
+        const reason = interaction.options.getString('reason') || 'No reason specified';
 
         if (!chats.has(targetUser.id)) {
             chats.set(targetUser.id, { history: [], warningsCount: 0 });
         }
         let targetData = chats.get(targetUser.id);
-        if (Array.isArray(targetData)) targetData = { history: targetData, warningsCount: 0 };
-
         targetData.warningsCount = (targetData.warningsCount || 0) + 1;
         chats.set(targetUser.id, targetData);
         saveMemory();
 
-        const warnEmbed = new EmbedBuilder()
-            .setColor('#F1C40F')
-            .setTitle('⚠️ User Warned')
-            .setDescription(`**${targetUser.tag}** has been warned by <@${interaction.user.id}>.`)
-            .addFields(
-                { name: '📋 Reason', value: reason },
-                { name: '📊 Total Warnings Now', value: `**${targetData.warningsCount}** / 3` }
-            )
-            .setTimestamp();
-
-        await targetUser.send(`⚠️ You received a warning in **${interaction.guild.name}**.\nReason: ${reason}\nTotal warnings: ${targetData.warningsCount}/3`).catch(() => {});
-        await interaction.reply({ embeds: [warnEmbed] });
+        await interaction.reply({ content: `⚠️ **${targetUser.tag}** has been manually warned for: *${reason}*. Total warnings: **${targetData.warningsCount}**.` });
     }
 
     // --- HANDLE /MUTE ---
-    if (commandName === 'mute') {
+    else if (commandName === 'mute') {
         const targetUser = interaction.options.getUser('target');
         const duration = interaction.options.getInteger('duration');
-        const reason = interaction.options.getString('reason') || 'No reason provided.';
+        const reason = interaction.options.getString('reason') || 'No reason specified';
 
-        const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
-        if (!member) return interaction.reply({ content: "❌ Member not found in server.", ephemeral: true });
-        if (!member.moderatable) return interaction.reply({ content: "❌ I cannot mute this user. Check role hierarchies/permissions.", ephemeral: true });
+        const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+        if (!targetMember || !targetMember.moderatable) return interaction.reply({ content: '❌ Cannot timeout this user.', ephemeral: true });
 
         try {
-            await member.timeout(duration * 60 * 1000, reason);
-            
-            const muteEmbed = new EmbedBuilder()
-                .setColor('#E67E22')
-                .setTitle('🔇 Member Muted')
-                .setDescription(`**${targetUser.tag}** has been put in timeout.`)
-                .addFields(
-                    { name: '⏳ Duration', value: `${duration} minutes`, inline: true },
-                    { name: '📋 Reason', value: reason, inline: true }
-                )
-                .setTimestamp();
-
-            await interaction.reply({ embeds: [muteEmbed] });
-        } catch (err) {
-            await interaction.reply({ content: "❌ Failed to apply timeout structure.", ephemeral: true });
+            await targetMember.timeout(duration * 60 * 1000, reason);
+            await interaction.reply({ content: `🤫 **${targetUser.tag}** has been muted for **${duration} minutes** | Reason: *${reason}*` });
+        } catch (e) {
+            await interaction.reply({ content: '❌ Failed to execute timeout.' });
         }
     }
 
     // --- HANDLE /UNMUTE ---
-    if (commandName === 'unmute') {
+    else if (commandName === 'unmute') {
         const targetUser = interaction.options.getUser('target');
-        const reason = interaction.options.getString('reason') || 'No reason provided.';
+        const reason = interaction.options.getString('reason') || 'No reason specified';
 
-        const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
-        if (!member) return interaction.reply({ content: "❌ Member not found in server.", ephemeral: true });
-        if (!member.moderatable) return interaction.reply({ content: "❌ Cannot alter status for this user.", ephemeral: true });
+        const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+        if (!targetMember || !targetMember.moderatable) return interaction.reply({ content: '❌ Cannot remove timeout from this user.', ephemeral: true });
 
         try {
-            await member.timeout(null, reason);
-            
-            const unmuteEmbed = new EmbedBuilder()
-                .setColor('#2ECC71')
-                .setTitle('🔊 Member Unmuted')
-                .setDescription(`Timeout removed for **${targetUser.tag}**.`)
-                .addFields({ name: '📋 Reason', value: reason })
-                .setTimestamp();
-
-            await interaction.reply({ embeds: [unmuteEmbed] });
-        } catch (err) {
-            await interaction.reply({ content: "❌ Failed to remove timeout.", ephemeral: true });
+            await targetMember.timeout(null, reason);
+            await interaction.reply({ content: `🔊 **${targetUser.tag}**\'s timeout has been removed.` });
+        } catch (e) {
+            await interaction.reply({ content: '❌ Failed to remove timeout.' });
         }
     }
 
     // --- HANDLE /AVATAR ---
-    if (commandName === 'avatar') {
+    else if (commandName === 'avatar') {
         const targetUser = interaction.options.getUser('target') || interaction.user;
-        const avatarUrl = targetUser.displayAvatarURL({ dynamic: true, size: 1024 });
-
         const avatarEmbed = new EmbedBuilder()
-            .setColor('#3498DB')
-            .setTitle(`🖼️ Avatar: ${targetUser.username}`)
-            .setDescription(`[Click here to download original link](${avatarUrl})`)
-            .setImage(avatarUrl)
+            .setColor('#1ABC9C')
+            .setTitle(`🖼️ Avatar of ${targetUser.username}`)
+            .setImage(targetUser.displayAvatarURL({ dynamic: true, size: 1024 }))
             .setTimestamp();
-
         await interaction.reply({ embeds: [avatarEmbed] });
     }
 
     // --- HANDLE /ROLL ---
-    if (commandName === 'roll') {
+    else if (commandName === 'roll') {
         const max = interaction.options.getInteger('max') || 6;
-        if (max < 1) return interaction.reply({ content: "❌ Cannot roll a dice lower than 1.", ephemeral: true });
-        
-        const rolled = Math.floor(Math.random() * max) + 1;
-
-        await interaction.reply({ content: `🎲 <@${interaction.user.id}> rolled a **${rolled}** (out of **${max}**)!` });
+        const result = Math.floor(Math.random() * max) + 1;
+        await interaction.reply({ content: `🎲 You rolled a **${result}** (out of ${max})!` });
     }
 
     // --- HANDLE /8BALL ---
-    if (commandName === '8ball') {
+    else if (commandName === '8ball') {
         const question = interaction.options.getString('question');
         const responses = [
-            'It is certain.', 'It is decidedly so.', 'Without a doubt.', 'Yes, definitely.',
-            'You may rely on it.', 'As I see it, yes.', 'Most likely.', 'Outlook good.',
-            'Yes.', 'Signs point to yes.', 'Reply hazy, try again.', 'Ask again later.',
-            'Better not tell you now.', 'Cannot predict now.', 'Concentrate and ask again.',
-            'Don\'t count on it.', 'My reply is no.', 'My sources say no.',
-            'Outlook not so good.', 'Very doubtful.'
+            'It is certain.', 'Without a doubt.', 'You may rely on it.', 'Yes definitely.',
+            'As I see it, yes.', 'Most likely.', 'Outlook good.', 'Yes.',
+            'Reply hazy, try again.', 'Ask again later.', 'Better not tell you now.', 'Cannot predict now.',
+            'Don’t count on it.', 'My reply is no.', 'My sources say no.', 'Outlook not so good.'
         ];
         const randomAnswer = responses[Math.floor(Math.random() * responses.length)];
-
-        const ballEmbed = new EmbedBuilder()
-            .setColor('#2C3E50')
-            .setTitle('🔮 Magic 8-Ball')
-            .addFields(
-                { name: '❓ Question', value: question },
-                { name: '🎱 Answer', value: randomAnswer }
-            )
-            .setTimestamp();
-
-        await interaction.reply({ embeds: [ballEmbed] });
+        await interaction.reply({ content: `🔮 **Question:** *${question}*\n💬 **Magic 8-Ball:** ${randomAnswer}` });
     }
 });
 
-// Pornirea clientului
+// ==========================================
+// 6. CONEXIUNE CLIENT DISCORD
+// ==========================================
 client.login(DISCORD_TOKEN);
