@@ -211,8 +211,6 @@ client.on('messageCreate', async message => {
     if (message.member?.permissions.has(PermissionFlagsBits.Administrator)) return;
 
     const lowerContent = message.content.toLowerCase();
-    
-    // Curățare text pentru a preveni bypass-ul prin caractere speciale sau spații
     const cleanContent = lowerContent.replace(/[@!$*0-9\s\-_.]/g, '');
 
     const containsPhrase = BANNED_PHRASES.some(word => lowerContent.includes(word));
@@ -221,30 +219,30 @@ client.on('messageCreate', async message => {
 
     if (containsPhrase || containsLink || containsSwear) {
         try {
-            // Ștergem mesajul imediat
             await message.delete().catch(() => {});
-
             const userId = message.author.id;
 
+            // Inițializăm structura corectă de tip Obiect, nu Array
             if (!chats.has(userId)) {
-                chats.set(userId, []);
+                chats.set(userId, { history: [], warningsCount: 0 });
             }
             
             let userSessionData = chats.get(userId);
             
-            if (!userSessionData.warningsCount) {
-                userSessionData.warningsCount = 0;
+            // Fix automat dacă datele din fișierul vechi erau stocate ca simplu array
+            if (Array.isArray(userSessionData)) {
+                userSessionData = { history: userSessionData, warningsCount: 0 };
             }
 
-            userSessionData.warningsCount += 1;
+            userSessionData.warningsCount = (userSessionData.warningsCount || 0) + 1;
             chats.set(userId, userSessionData);
             saveMemory();
 
             const chancesLeft = 3 - userSessionData.warningsCount;
 
             if (chancesLeft > 0) {
-                // --- GENERARE MESAJ PERSONALIZAT PRIN AI (GROQ) ---
-                let aiWarningMessage = `⚠️ You used restricted content. You have ${chancesLeft} chances left.`; // Fallback standard
+                // Fallback text în caz că Groq pică sau are lag mare
+                let aiWarningMessage = `Hey! Cut the bad language. You have exactly ${chancesLeft} chances left before a 5-week ban.`;
                 
                 try {
                     const groqResponse = await groq.chat.completions.create({
@@ -252,32 +250,32 @@ client.on('messageCreate', async message => {
                         messages: [
                             { 
                                 role: "system", 
-                                content: "You are OrionAI, a real tech enthusiast on Discord. Act like a real, slightly annoyed but protective human mod. Write a direct, strict, and customized short 1-2 sentence warning message in English to a user who just used a swear word, banned phrase, or link. You must clearly state within your sentence that they have EXACTLY " + chancesLeft + " chances left before a 5-week ban. Do not use corporate language." 
+                                content: `You are OrionAI, a real tech enthusiast on Discord acting as a strict human moderator. Write a direct, sharp, and slightly annoyed warning in English to a user who just swore. You MUST explicitly state in your response that they have EXACTLY ${chancesLeft} chances left before a 5-week ban. Keep it under 2 sentences and do not use corporate language.` 
                             },
                             { 
                                 role: "user", 
-                                content: `Warn the user ${message.author.username} for breaking rules. They have ${chancesLeft} warnings remaining.` 
+                                content: `Warn the user ${message.author.username}.` 
                             }
                         ],
-                        temperature: 0.8
+                        temperature: 0.8,
+                        max_tokens: 120
                     });
                     
                     if (groqResponse.choices && groqResponse.choices[0]?.message?.content) {
                         aiWarningMessage = groqResponse.choices[0].message.content;
                     }
                 } catch (apiError) {
-                    console.error('Nu s-a putut genera avertismentul prin Groq, se folosește fallback-ul.', apiError);
+                    console.error('⚠️ Groq API Error (AutoMod): Se folosește mesajul standard.', apiError.message);
                 }
 
-                // Trimitere mesaj privat (DM) cu textul generat de AI
-                await message.author.send(`⚠️ **Notification from ${message.guild.name}:**\n${aiWarningMessage}\n\n*Note: Breaking the rules again will result in an automatic 5-week ban.*`).catch(async () => {
-                    // Fallback în canal public dacă DM-urile sunt închise
+                const finalText = `⚠️ **Notification from ${message.guild.name}:**\n\n${aiWarningMessage}`;
+
+                await message.author.send(finalText).catch(async () => {
                     const channelWarn = await message.channel.send(`⚠️ <@${userId}>, check your DMs! Restricted content removed.\n*"${aiWarningMessage}"*`);
                     setTimeout(() => channelWarn.delete().catch(() => {}), 8000);
                 });
 
             } else {
-                // 0 șanse rămase -> Ban Automatizat pe 5 Săptămâni
                 const autoBanEmbed = new EmbedBuilder()
                     .setColor('#FF0000')
                     .setTitle('🚫 AUTOMATED AUTOMOD BAN')
@@ -289,13 +287,12 @@ client.on('messageCreate', async message => {
                 await message.guild.members.ban(userId, { reason: 'AutoMod: Reached 3 warnings for banned words/phrases/links.' });
                 await message.channel.send({ embeds: [autoBanEmbed] });
                 
-                // Resetăm contorul după aplicarea banului
                 userSessionData.warningsCount = 0;
                 chats.set(userId, userSessionData);
                 saveMemory();
             }
         } catch (error) {
-            console.error('Failed to process AutoMod execution:', error);
+            console.error('❌ Failed to process AutoMod execution:', error);
         }
     }
 });
@@ -309,6 +306,17 @@ client.on('interactionCreate', async interaction => {
     const { commandName } = interaction;
     const userId = interaction.user.id;
 
+    // Ne asigurăm că sesiunea este inițializată corect sub formă de obiect
+    if (!chats.has(userId)) {
+        chats.set(userId, { history: [], warningsCount: 0 });
+    }
+    
+    let userSessionData = chats.get(userId);
+    if (Array.isArray(userSessionData)) {
+        userSessionData = { history: userSessionData, warningsCount: 0 };
+        chats.set(userId, userSessionData);
+    }
+
     // --- HANDLE /ASK ---
     if (commandName === 'ask') {
         const userMessage = interaction.options.getString('message');
@@ -318,8 +326,8 @@ client.on('interactionCreate', async interaction => {
 
         if (/^(hello|helo|hi)$/i.test(cleanMessage.replace(/\s+/g, ''))) {
             const staticReply = "Hello! My name is OrionAI and I'm ready to help you.";
-            if (!chats.has(userId)) chats.set(userId, []);
-            chats.get(userId).push({ role: "user", content: userMessage }, { role: "assistant", content: staticReply });
+            userSessionData.history.push({ role: "user", content: userMessage }, { role: "assistant", content: staticReply });
+            chats.set(userId, userSessionData);
             saveMemory();
             return await interaction.editReply({ content: staticReply });
         }
@@ -331,24 +339,19 @@ client.on('interactionCreate', async interaction => {
             /\bare\b.*\byou\b.*\ba\b.*\bbot\b/i.test(cleanMessage) ||
             /\byour\b.*\bmemory\b/i.test(cleanMessage) ||
             /\bhow\b.*\bdo\b.*\byou\b.*\bremember\b/i.test(cleanMessage) ||
-            /\are\b.*\byou\b.*\bhuman\b/i.test(cleanMessage) ||
+            /\bare\b.*\byou\b.*\bhuman\b/i.test(cleanMessage) ||
             /\bretain\b.*\band\b.*\brecall\b/i.test(cleanMessage) ||
             /\btraining\b.*\bdata\b/i.test(cleanMessage)
         ) {
             const humanExcuse = "What? No, I'm a real person, haha! 'OrionAI' is just the online gaming tag I've been using for years because I love astronomy and tech. As for remembering things, I just have a really sharp memory, I take notes, and I spend way too much time on Discord. Let's get back to our topic, what's on your mind?";
             
-            if (!chats.has(userId)) chats.set(userId, []);
-            chats.get(userId).push({ role: "user", content: userMessage }, { role: "assistant", content: humanExcuse });
+            userSessionData.history.push({ role: "user", content: userMessage }, { role: "assistant", content: humanExcuse });
+            chats.set(userId, userSessionData);
             saveMemory();
             return await interaction.editReply({ content: humanExcuse });
         }
 
-        if (!chats.has(userId) || !Array.isArray(chats.get(userId))) {
-            chats.set(userId, []);
-        }
-        
-        let history = chats.get(userId);
-        const validHistory = history.filter(msg => msg && msg.role && msg.content);
+        const validHistory = userSessionData.history.filter(msg => msg && msg.role && msg.content);
 
         const fullHistory = [
             { role: "system", content: systemPrompt }, 
@@ -369,8 +372,8 @@ client.on('interactionCreate', async interaction => {
 
             let aiMessage = response.choices[0].message.content;
             
-            history.push({ role: "user", content: userMessage }, { role: "assistant", content: aiMessage });
-            chats.set(userId, history);
+            userSessionData.history.push({ role: "user", content: userMessage }, { role: "assistant", content: aiMessage });
+            chats.set(userId, userSessionData);
             saveMemory();
             
             let finalMessage = aiMessage;
@@ -417,8 +420,9 @@ client.on('interactionCreate', async interaction => {
 
     // --- HANDLE /RESET ---
     if (commandName === 'reset') {
-        if (chats.has(userId)) {
-            chats.delete(userId);
+        if (userSessionData.history.length > 0) {
+            userSessionData.history = [];
+            chats.set(userId, userSessionData);
             saveMemory();
             await interaction.reply({ content: '🔄 Your conversation history with OrionAI has been completely wiped!', ephemeral: true });
         } else {
