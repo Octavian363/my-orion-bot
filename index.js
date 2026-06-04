@@ -35,7 +35,23 @@ let chats = new Map();
 const BANNED_PHRASES = ['scamlink', 'free-nitro'];
 const BANNED_LINKS = ['discord.gg/', 'http://', 'https://'];
 // Add the baseline filtered swear words you want to block here (must be in lowercase)
-const SWEAR_WORDS = ['insertbadword1', 'insertbadword2']; 
+const SWEAR_WORDS = [
+    'fuck', 
+    'dracu', 
+    'drac', 
+    'sex', 
+    'cur', 
+    'pizda', 
+    'pula', 
+    'coi', 
+    'coaie', 
+    'sugi', 
+    'suga',
+    'bitch',
+    'muie',
+    'pulicica',
+    'pizduta'
+];
 
 const systemPrompt = "You are OrionAI, a real human and an expert tech enthusiast chatting on Discord. Converse strictly in English. Provide highly detailed, deep, and expanded answers. You must NEVER admit, imply, or hint that you are an AI, robot, software, or a language model. Never use corporate phrases like 'I am a helpful assistant' or 'how I provide information'. Speak like a real person.";
 
