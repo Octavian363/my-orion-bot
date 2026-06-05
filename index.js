@@ -39,7 +39,8 @@ const SWEAR_WORDS = [
     'coi', 'coaie', 'sugi', 'suga', 'bitch', 'muie', 'pulicica', 'pizduta'
 ];
 
-const systemPrompt = "You are OrionAI, a real human and an expert tech enthusiast chatting on Discord. Converse strictly in English. Provide highly detailed, deep, and expanded answers. You must NEVER admit, imply, or hint that you are an AI, robot, software, or a language model. Never use corporate phrases like 'I am a helpful assistant' or 'how I provide information'. Speak like a real person.";
+// Am ajustat promptul pentru a elimina tranzitiile robotice de tipul "Hello again"
+const systemPrompt = "You are OrionAI, a real human and an expert tech enthusiast chatting on Discord. Converse strictly in English. Provide highly detailed, deep, and expanded answers. You must NEVER admit, imply, or hint that you are an AI, robot, software, or a language model. Never use corporate phrases like 'I am a helpful assistant' or 'how I provide information'. Speak like a real person. Be direct and natural; do not use repetitive greetings or awkwardly mention past topics (like 'Hello again, we were talking about...') unless it flows perfectly into a casual human conversation.";
 
 function loadMemory() {
     try {
@@ -250,20 +251,22 @@ client.on('messageCreate', async message => {
     if (containsPhrase || containsLink || containsSwear) {
         try {
             await message.delete().catch(() => {});
-            const userId = message.author.id;
+            
+            // Cheie unica per server + utilizator pentru sistemul de mod
+            const memoryKey = `guild-${message.guild.id}-${message.author.id}`;
 
-            if (!chats.has(userId)) {
-                chats.set(userId, { history: [], warningsCount: 0 });
+            if (!chats.has(memoryKey)) {
+                chats.set(memoryKey, { history: [], warningsCount: 0 });
             }
             
-            let userSessionData = chats.get(userId);
+            let userSessionData = chats.get(memoryKey);
             
             if (Array.isArray(userSessionData)) {
                 userSessionData = { history: userSessionData, warningsCount: 0 };
             }
 
             userSessionData.warningsCount = (userSessionData.warningsCount || 0) + 1;
-            chats.set(userId, userSessionData);
+            chats.set(memoryKey, userSessionData);
             saveMemory();
 
             const chancesLeft = 3 - userSessionData.warningsCount;
@@ -298,7 +301,7 @@ client.on('messageCreate', async message => {
                 const finalText = `⚠️ **Notification from ${message.guild.name}:**\n\n${aiWarningMessage}`;
 
                 await message.author.send(finalText).catch(async () => {
-                    const channelWarn = await message.channel.send(`⚠️ <@${userId}>, check your DMs! Restricted content removed.\n*"${aiWarningMessage}"*`);
+                    const channelWarn = await message.channel.send(`⚠️ <@${message.author.id}>, check your DMs! Restricted content removed.\n*"${aiWarningMessage}"*`);
                     setTimeout(() => channelWarn.delete().catch(() => {}), 8000);
                 });
 
@@ -311,11 +314,11 @@ client.on('messageCreate', async message => {
 
                 await message.author.send(`❌ You have been banned from **${message.guild.name}** for 5 weeks because you ran out of chances.`).catch(() => {});
                 
-                await message.guild.members.ban(userId, { reason: 'AutoMod: Reached 3 warnings for banned words/phrases/links.' });
+                await message.guild.members.ban(message.author.id, { reason: 'AutoMod: Reached 3 warnings for banned words/phrases/links.' });
                 await message.channel.send({ embeds: [autoBanEmbed] });
                 
                 userSessionData.warningsCount = 0;
-                chats.set(userId, userSessionData);
+                chats.set(memoryKey, userSessionData);
                 saveMemory();
             }
         } catch (error) {
@@ -333,14 +336,17 @@ client.on('interactionCreate', async interaction => {
     const { commandName } = interaction;
     const userId = interaction.user.id;
 
-    if (!chats.has(userId)) {
-        chats.set(userId, { history: [], warningsCount: 0 });
+    // AICI E SCHIMBAREA CRUCIALĂ: Separăm memoria grupului de cea privată (DM)
+    const memoryKey = interaction.guildId ? `guild-${interaction.guildId}-${userId}` : `dm-${userId}`;
+
+    if (!chats.has(memoryKey)) {
+        chats.set(memoryKey, { history: [], warningsCount: 0 });
     }
     
-    let userSessionData = chats.get(userId);
+    let userSessionData = chats.get(memoryKey);
     if (Array.isArray(userSessionData)) {
         userSessionData = { history: userSessionData, warningsCount: 0 };
-        chats.set(userId, userSessionData);
+        chats.set(memoryKey, userSessionData);
     }
 
     // --- HANDLE /ASK ---
@@ -353,7 +359,7 @@ client.on('interactionCreate', async interaction => {
         if (/^(hello|helo|hi)$/i.test(cleanMessage.replace(/\s+/g, ''))) {
             const staticReply = "Hello! My name is OrionAI and I'm ready to help you.";
             userSessionData.history.push({ role: "user", content: userMessage }, { role: "assistant", content: staticReply });
-            chats.set(userId, userSessionData);
+            chats.set(memoryKey, userSessionData);
             saveMemory();
             return await interaction.editReply({ content: staticReply });
         }
@@ -372,7 +378,7 @@ client.on('interactionCreate', async interaction => {
             const humanExcuse = "What? No, I'm a real person, haha! 'OrionAI' is just the online gaming tag I've been using for years because I love astronomy and tech. As for remembering things, I just have a really sharp memory, I take notes, and I spend way too much time on Discord. Let's get back to our topic, what's on your mind?";
             
             userSessionData.history.push({ role: "user", content: userMessage }, { role: "assistant", content: humanExcuse });
-            chats.set(userId, userSessionData);
+            chats.set(memoryKey, userSessionData);
             saveMemory();
             return await interaction.editReply({ content: humanExcuse });
         }
@@ -399,7 +405,7 @@ client.on('interactionCreate', async interaction => {
             let aiMessage = response.choices[0].message.content;
             
             userSessionData.history.push({ role: "user", content: userMessage }, { role: "assistant", content: aiMessage });
-            chats.set(userId, userSessionData);
+            chats.set(memoryKey, userSessionData);
             saveMemory();
             
             let finalMessage = aiMessage;
@@ -448,7 +454,7 @@ client.on('interactionCreate', async interaction => {
     else if (commandName === 'reset') {
         if (userSessionData.history.length > 0) {
             userSessionData.history = [];
-            chats.set(userId, userSessionData);
+            chats.set(memoryKey, userSessionData);
             saveMemory();
             await interaction.reply({ content: '🔄 Your conversation history with OrionAI has been completely wiped!', ephemeral: true });
         } else {
@@ -672,126 +678,10 @@ client.on('interactionCreate', async interaction => {
                 .setFooter({ text: 'OrionAI Dashboard' });
 
             await interaction.editReply({ embeds: [serverEmbed] });
-        } catch (err) {
-            console.error(err);
-            await interaction.editReply({ content: '❌ Failed to collect server statistics.' });
+        } catch (error) {
+            await interaction.editReply({ content: '❌ Error fetching server info.' });
         }
-    }
-
-    // --- HANDLE /USERINFO ---
-    else if (commandName === 'userinfo') {
-        const targetUser = interaction.options.getUser('target') || interaction.user;
-        const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
-
-        const userEmbed = new EmbedBuilder()
-            .setColor('#2ECC71')
-            .setTitle(`👤 User Info: ${targetUser.tag}`)
-            .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
-            .addFields(
-                { name: '🆔 User ID', value: `\`${targetUser.id}\``, inline: true },
-                { name: '🤖 Is Bot?', value: targetUser.bot ? 'Yes' : 'No', inline: true },
-                { name: '📅 Account Created', value: `<t:${Math.floor(targetUser.createdTimestamp / 1000)}:R>`, inline: false }
-            )
-            .setTimestamp()
-            .setFooter({ text: 'OrionAI Registry' });
-
-        if (targetMember) {
-            userEmbed.addFields(
-                { name: '📥 Joined Server', value: `<t:${Math.floor(targetMember.joinedTimestamp / 1000)}:R>`, inline: true },
-                { name: '🎨 Highest Role', value: `${targetMember.roles.highest}`, inline: true }
-            );
-        }
-
-        await interaction.reply({ embeds: [userEmbed] });
-    }
-
-    // --- HANDLE /PHOTO ---
-    else if (commandName === 'photo') {
-        await interaction.reply({ content: '🎨 Feature incoming! Image generation is currently undergoing maintenance.', ephemeral: true });
-    }
-
-    // --- HANDLE /WARN ---
-    else if (commandName === 'warn') {
-        const targetUser = interaction.options.getUser('target');
-        const reason = interaction.options.getString('reason') || 'No reason specified';
-
-        if (!chats.has(targetUser.id)) {
-            chats.set(targetUser.id, { history: [], warningsCount: 0 });
-        }
-        let targetData = chats.get(targetUser.id);
-        targetData.warningsCount = (targetData.warningsCount || 0) + 1;
-        chats.set(targetUser.id, targetData);
-        saveMemory();
-
-        await interaction.reply({ content: `⚠️ **${targetUser.tag}** has been manually warned for: *${reason}*. Total warnings: **${targetData.warningsCount}**.` });
-    }
-
-    // --- HANDLE /MUTE ---
-    else if (commandName === 'mute') {
-        const targetUser = interaction.options.getUser('target');
-        const duration = interaction.options.getInteger('duration');
-        const reason = interaction.options.getString('reason') || 'No reason specified';
-
-        const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
-        if (!targetMember || !targetMember.moderatable) return interaction.reply({ content: '❌ Cannot timeout this user.', ephemeral: true });
-
-        try {
-            await targetMember.timeout(duration * 60 * 1000, reason);
-            await interaction.reply({ content: `🤫 **${targetUser.tag}** has been muted for **${duration} minutes** | Reason: *${reason}*` });
-        } catch (e) {
-            await interaction.reply({ content: '❌ Failed to execute timeout.' });
-        }
-    }
-
-    // --- HANDLE /UNMUTE ---
-    else if (commandName === 'unmute') {
-        const targetUser = interaction.options.getUser('target');
-        const reason = interaction.options.getString('reason') || 'No reason specified';
-
-        const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
-        if (!targetMember || !targetMember.moderatable) return interaction.reply({ content: '❌ Cannot remove timeout from this user.', ephemeral: true });
-
-        try {
-            await targetMember.timeout(null, reason);
-            await interaction.reply({ content: `🔊 **${targetUser.tag}**\'s timeout has been removed.` });
-        } catch (e) {
-            await interaction.reply({ content: '❌ Failed to remove timeout.' });
-        }
-    }
-
-    // --- HANDLE /AVATAR ---
-    else if (commandName === 'avatar') {
-        const targetUser = interaction.options.getUser('target') || interaction.user;
-        const avatarEmbed = new EmbedBuilder()
-            .setColor('#1ABC9C')
-            .setTitle(`🖼️ Avatar of ${targetUser.username}`)
-            .setImage(targetUser.displayAvatarURL({ dynamic: true, size: 1024 }))
-            .setTimestamp();
-        await interaction.reply({ embeds: [avatarEmbed] });
-    }
-
-    // --- HANDLE /ROLL ---
-    else if (commandName === 'roll') {
-        const max = interaction.options.getInteger('max') || 6;
-        const result = Math.floor(Math.random() * max) + 1;
-        await interaction.reply({ content: `🎲 You rolled a **${result}** (out of ${max})!` });
-    }
-
-    // --- HANDLE /8BALL ---
-    else if (commandName === '8ball') {
-        const question = interaction.options.getString('question');
-        const responses = [
-            'It is certain.', 'Without a doubt.', 'You may rely on it.', 'Yes definitely.',
-            'As I see it, yes.', 'Most likely.', 'Outlook good.', 'Yes.',
-            'Reply hazy, try again.', 'Ask again later.', 'Better not tell you now.', 'Cannot predict now.',
-            'Don’t count on it.', 'My reply is no.', 'My sources say no.', 'Outlook not so good.'
-        ];
-        const randomAnswer = responses[Math.floor(Math.random() * responses.length)];
-        await interaction.reply({ content: `🔮 **Question:** *${question}*\n💬 **Magic 8-Ball:** ${randomAnswer}` });
     }
 });
 
-// ==========================================
-// 6. CONEXIUNE CLIENT DISCORD
-// ==========================================
 client.login(DISCORD_TOKEN);
