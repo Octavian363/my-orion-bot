@@ -39,7 +39,6 @@ const SWEAR_WORDS = [
     'coi', 'coaie', 'sugi', 'suga', 'bitch', 'muie', 'pulicica', 'pizduta'
 ];
 
-// Am ajustat promptul pentru a elimina tranzitiile robotice de tipul "Hello again"
 const systemPrompt = "You are OrionAI, a real human and an expert tech enthusiast chatting on Discord. Converse strictly in English. Provide highly detailed, deep, and expanded answers. You must NEVER admit, imply, or hint that you are an AI, robot, software, or a language model. Never use corporate phrases like 'I am a helpful assistant' or 'how I provide information'. Speak like a real person. Be direct and natural; do not use repetitive greetings or awkwardly mention past topics (like 'Hello again, we were talking about...') unless it flows perfectly into a casual human conversation.";
 
 function loadMemory() {
@@ -252,7 +251,6 @@ client.on('messageCreate', async message => {
         try {
             await message.delete().catch(() => {});
             
-            // Cheie unica per server + utilizator pentru sistemul de mod
             const memoryKey = `guild-${message.guild.id}-${message.author.id}`;
 
             if (!chats.has(memoryKey)) {
@@ -260,7 +258,6 @@ client.on('messageCreate', async message => {
             }
             
             let userSessionData = chats.get(memoryKey);
-            
             if (Array.isArray(userSessionData)) {
                 userSessionData = { history: userSessionData, warningsCount: 0 };
             }
@@ -335,8 +332,6 @@ client.on('interactionCreate', async interaction => {
 
     const { commandName } = interaction;
     const userId = interaction.user.id;
-
-    // AICI E SCHIMBAREA CRUCIALĂ: Separăm memoria grupului de cea privată (DM)
     const memoryKey = interaction.guildId ? `guild-${interaction.guildId}-${userId}` : `dm-${userId}`;
 
     if (!chats.has(memoryKey)) {
@@ -681,6 +676,126 @@ client.on('interactionCreate', async interaction => {
         } catch (error) {
             await interaction.editReply({ content: '❌ Error fetching server info.' });
         }
+    }
+
+    // --- HANDLE /USERINFO ---
+    else if (commandName === 'userinfo') {
+        const targetUser = interaction.options.getUser('target') || interaction.user;
+        const member = await interaction.guild?.members.fetch(targetUser.id).catch(() => null);
+        
+        const infoEmbed = new EmbedBuilder()
+            .setColor('#3498DB')
+            .setTitle(`👤 User Info: ${targetUser.username}`)
+            .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+            .addFields(
+                { name: 'Tag', value: `\`${targetUser.tag}\``, inline: true },
+                { name: 'ID', value: `\`${targetUser.id}\``, inline: true },
+                { name: 'Created At', value: `<t:${Math.floor(targetUser.createdTimestamp / 1000)}:R>`, inline: true }
+            );
+            
+        if (member) {
+            infoEmbed.addFields(
+                { name: 'Joined Server', value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`, inline: true },
+                { name: 'Highest Role', value: `${member.roles.highest}`, inline: true }
+            );
+        }
+        await interaction.reply({ embeds: [infoEmbed] });
+    }
+
+    // --- HANDLE /WARN ---
+    else if (commandName === 'warn') {
+        const targetUser = interaction.options.getUser('target');
+        const reason = interaction.options.getString('reason') || 'No reason provided';
+        
+        const targetKey = `guild-${interaction.guildId}-${targetUser.id}`;
+        if (!chats.has(targetKey)) {
+            chats.set(targetKey, { history: [], warningsCount: 0 });
+        }
+        
+        let targetData = chats.get(targetKey);
+        if (Array.isArray(targetData)) targetData = { history: [], warningsCount: 0 };
+
+        targetData.warningsCount = (targetData.warningsCount || 0) + 1;
+        chats.set(targetKey, targetData);
+        saveMemory();
+
+        await interaction.reply({ content: `⚠️ **${targetUser.tag}** has been manually warned.\n**Reason:** ${reason}\n**Total Warnings:** ${targetData.warningsCount}/3` });
+    }
+
+    // --- HANDLE /MUTE ---
+    else if (commandName === 'mute') {
+        const targetUser = interaction.options.getUser('target');
+        const duration = interaction.options.getInteger('duration');
+        const reason = interaction.options.getString('reason') || 'No reason provided';
+        
+        const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+        if (!member) return interaction.reply({ content: '❌ User not found in this server.', ephemeral: true });
+        
+        try {
+            await member.timeout(duration * 60 * 1000, reason);
+            await interaction.reply({ content: `🤫 **${targetUser.tag}** has been timed out for **${duration} minutes**.\n**Reason:** ${reason}` });
+        } catch (err) {
+            await interaction.reply({ content: '❌ Failed to mute user. Verify my hierarchy role permissions.', ephemeral: true });
+        }
+    }
+
+    // --- HANDLE /UNMUTE ---
+    else if (commandName === 'unmute') {
+        const targetUser = interaction.options.getUser('target');
+        const reason = interaction.options.getString('reason') || 'No reason provided';
+        
+        const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+        if (!member) return interaction.reply({ content: '❌ User not found in this server.', ephemeral: true });
+        
+        try {
+            await member.timeout(null, reason);
+            await interaction.reply({ content: `🔊 Timeout removed from **${targetUser.tag}**.` });
+        } catch (err) {
+            await interaction.reply({ content: '❌ Failed to remove timeout.', ephemeral: true });
+        }
+    }
+
+    // --- HANDLE /AVATAR ---
+    else if (commandName === 'avatar') {
+        const targetUser = interaction.options.getUser('target') || interaction.user;
+        const avatarEmbed = new EmbedBuilder()
+            .setColor('#1ABC9C')
+            .setTitle(`🖼️ Avatar of ${targetUser.username}`)
+            .setImage(targetUser.displayAvatarURL({ dynamic: true, size: 1024 }));
+        await interaction.reply({ embeds: [avatarEmbed] });
+    }
+
+    // --- HANDLE /ROLL ---
+    else if (commandName === 'roll') {
+        const max = interaction.options.getInteger('max') || 6;
+        const result = Math.floor(Math.random() * max) + 1;
+        await interaction.reply({ content: `🎲 You rolled a dice and got: **${result}** (Range: 1-${max})` });
+    }
+
+    // --- HANDLE /8BALL ---
+    else if (commandName === '8ball') {
+        const question = interaction.options.getString('question');
+        const answers = [
+            "It is certain.", "Without a doubt.", "You may rely on it.", "Yes definitely.", 
+            "As I see it, yes.", "Outlook good.", "Signs point to yes.", "Reply hazy, try again.", 
+            "Ask again later.", "Better not tell you now.", "Cannot predict now.", 
+            "Don't count on it.", "My reply is no.", "My sources say no.", "Outlook not so good.", "Very doubtful."
+        ];
+        const randomAnswer = answers[Math.floor(Math.random() * answers.length)];
+        
+        const ballEmbed = new EmbedBuilder()
+            .setColor('#2C3E50')
+            .setTitle('🔮 Magic 8-Ball')
+            .addFields(
+                { name: '❓ Question', value: question },
+                { name: '🎱 Answer', value: randomAnswer }
+            );
+        await interaction.reply({ embeds: [ballEmbed] });
+    }
+
+    // --- HANDLE /PHOTO ---
+    else if (commandName === 'photo') {
+        await interaction.reply({ content: '📸 Image generation setup requires a separate specialized API key (like DALL-E or Midjourney). Currently, I can only provide high-tech textual analysis and moderate the chat!' });
     }
 });
 
