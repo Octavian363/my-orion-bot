@@ -12,8 +12,6 @@ const Groq = require('groq-sdk');
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY; 
-// Fallback to OPENAI_API_KEY if IMAGE_API_KEY isn't explicitly defined
-const IMAGE_API_KEY = process.env.IMAGE_API_KEY || process.env.OPENAI_API_KEY;
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
 
 // ADD ANY TEXT CHANNEL NAMES YOU WANT THE WELCOME SYSTEM TO TARGET HERE
@@ -156,14 +154,6 @@ const commands = [
                 .setRequired(false)
         ),
     new SlashCommandBuilder()
-        .setName('photo')
-        .setDescription('Generate a custom photo using AI based on your description')
-        .addStringOption(option =>
-            option.setName('description')
-                .setDescription('Describe the photo you want the AI to create')
-                .setRequired(true)
-        ),
-    new SlashCommandBuilder()
         .setName('warn')
         .setDescription('Warn a user and log it into the memory file')
         .addUserOption(option => option.setName('target').setDescription('The user to warn').setRequired(true))
@@ -197,7 +187,7 @@ const commands = [
 ].map(command => command.toJSON());
 
 // ==========================================
-// 3. READY EVENT (Updated to clientReady for v15 compatibility)
+// 3. READY EVENT (Updated to clientReady)
 // ==========================================
 client.once('clientReady', async () => {
     console.log(`🔒 OrionAI is online and connected to Groq (Llama 3.3 70B)! Connected as: ${client.user.tag}`);
@@ -797,52 +787,6 @@ client.on('interactionCreate', async interaction => {
                 { name: '🎱 Answer', value: randomAnswer }
             );
         await interaction.reply({ embeds: [ballEmbed] });
-    }
-
-    // --- HANDLE /PHOTO ---
-    else if (commandName === 'photo') {
-        const description = interaction.options.getString('description');
-        await interaction.deferReply();
-
-        try {
-            // Note: If you are using a proxy service, ensure this URL points to your exact proxy endpoint.
-            // A trailing slash issue or missing 'https' protocol can trigger standard fetch redirects 
-            // which will down-grade a POST request to a GET request automatically, causing the error.
-            const response = await fetch("https://api.openai.com/v1/images/generations", {
-                method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${IMAGE_API_KEY}`,
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    model: "dall-e-3",
-                    prompt: description,
-                    n: 1,
-                    size: "1024x1024"
-                })
-            });
-
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.error?.message || `Server returned status code ${response.status}`);
-            }
-
-            const data = await response.json();
-            const imageUrl = data.data[0].url;
-
-            const photoEmbed = new EmbedBuilder()
-                .setColor('#1ABC9C')
-                .setTitle('🖼️ OrionAI Image Generator')
-                .setDescription(`**Prompt:** ${description}`)
-                .setImage(imageUrl)
-                .setTimestamp()
-                .setFooter({ text: `Generated for ${interaction.user.username}`, iconURL: client.user.displayAvatarURL() });
-
-            await interaction.editReply({ embeds: [photoEmbed] });
-        } catch (error) {
-            console.error('❌ Error executing /photo command:', error);
-            await interaction.editReply({ content: `❌ Image generation failed. Reason: *${error.message}*` });
-        }
     }
 });
 
