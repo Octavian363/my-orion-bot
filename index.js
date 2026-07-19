@@ -18,7 +18,9 @@ const Groq = require('groq-sdk');
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY; 
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
-const WELCOME_CHANNEL_NAME = "general"; 
+
+// AICI ADAUGI TOATE NUMELE DE CANALE PE CARE VREI SĂ LE CAUTE BOTUL
+const WELCOME_CHANNEL_NAMES = ["general", "the-test-channel", "welcome", "chat", "bine-ai-venit", "lobby"];
 
 const client = new Client({ 
     intents: [
@@ -198,7 +200,7 @@ const commands = [
 ].map(command => command.toJSON());
 
 // ==========================================
-// 3. EVENIMENT READY & WELCOME
+// 3. EVENIMENT READY & WELCOME DYNAMIC
 // ==========================================
 client.once('ready', async () => {
     console.log(`🔒 OrionAI is online and connected to Groq (Llama 3.3 70B)! Connected as: ${client.user.tag}`);
@@ -215,7 +217,17 @@ client.once('ready', async () => {
 });
 
 client.on('guildMemberAdd', async member => {
-    const welcomeChannel = member.guild.channels.cache.find(ch => ch.name === WELCOME_CHANNEL_NAME);
+    // Pasul 1: Căutăm în lista de nume (ex: "general", "the-test-channel")
+    let welcomeChannel = member.guild.channels.cache.find(ch => 
+        ch.isTextBased() && WELCOME_CHANNEL_NAMES.includes(ch.name.toLowerCase())
+    );
+
+    // Pasul 2: Dacă nu găsește după nume, folosește canalul de sistem implicit al serverului
+    if (!welcomeChannel) {
+        welcomeChannel = member.guild.systemChannel;
+    }
+
+    // Pasul 3: Dacă serverul nu are nici măcar canal de sistem (foarte rar), ne oprim ca să nu crape botul
     if (!welcomeChannel) return;
 
     const welcomeEmbed = new EmbedBuilder()
@@ -653,7 +665,7 @@ client.on('interactionCreate', async interaction => {
         
         try {
             const accurateMembers = await guild.members.fetch();
-            const totalMembers = guild.memberCount;
+            const totalMembers = accurateMembers.size;
             const botCount = accurateMembers.filter(m => m.user.bot).size; 
             const humanCount = totalMembers - botCount;
 
