@@ -2,25 +2,21 @@
 const path = require('path');
 
 // ==========================================
-// 1. CONFIGURARE DINAMICĂ MEDIU
+// 1. ENVIRONMENT CONFIGURATION (.env)
 // ==========================================
-if (fs.existsSync('./bot.env')) {
-    require('dotenv').config({ path: './bot.env' });
-    console.log('📝 Mod local detectat: S-au încărcat variabilele din bot.env.');
-} else {
-    require('dotenv').config();
-    console.log('☁️ Mod cloud (Railway) detectat: Se folosesc variabilele globale injectate.');
-}
+require('dotenv').config();
+console.log('📝 Standard mode detected: Loaded variables from the .env file.');
 
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const Groq = require('groq-sdk');
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY; 
+const IMAGE_API_KEY = process.env.IMAGE_API_KEY;
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
 
-// AICI ADAUGI TOATE NUMELE DE CANALE PE CARE VREI SĂ LE CAUTE BOTUL
-const WELCOME_CHANNEL_NAMES = ["general", "the-test-channel", "welcome", "chat", "bine-ai-venit", "lobby"];
+// ADD ANY TEXT CHANNEL NAMES YOU WANT THE WELCOME SYSTEM TO TARGET HERE
+const WELCOME_CHANNEL_NAMES = ["general", "the-test-channel", "welcome", "chat", "lobby"];
 
 const client = new Client({ 
     intents: [
@@ -71,7 +67,7 @@ function saveMemory() {
 }
 
 // ==========================================
-// 2. DEFINIRE COMANDE SLASH
+// 2. DEFINE SLASH COMMANDS
 // ==========================================
 const commands = [
     new SlashCommandBuilder()
@@ -200,7 +196,7 @@ const commands = [
 ].map(command => command.toJSON());
 
 // ==========================================
-// 3. EVENIMENT READY & WELCOME DYNAMIC
+// 3. READY EVENT & DYNAMIC WELCOME SYSTEM
 // ==========================================
 client.once('ready', async () => {
     console.log(`🔒 OrionAI is online and connected to Groq (Llama 3.3 70B)! Connected as: ${client.user.tag}`);
@@ -217,17 +213,14 @@ client.once('ready', async () => {
 });
 
 client.on('guildMemberAdd', async member => {
-    // Pasul 1: Căutăm în lista de nume (ex: "general", "the-test-channel")
     let welcomeChannel = member.guild.channels.cache.find(ch => 
         ch.isTextBased() && WELCOME_CHANNEL_NAMES.includes(ch.name.toLowerCase())
     );
 
-    // Pasul 2: Dacă nu găsește după nume, folosește canalul de sistem implicit al serverului
     if (!welcomeChannel) {
         welcomeChannel = member.guild.systemChannel;
     }
 
-    // Pasul 3: Dacă serverul nu are nici măcar canal de sistem (foarte rar), ne oprim ca să nu crape botul
     if (!welcomeChannel) return;
 
     const welcomeEmbed = new EmbedBuilder()
@@ -246,7 +239,7 @@ client.on('guildMemberAdd', async member => {
 });
 
 // ==========================================
-// 4. AUTOMOD CU AVERTISMENTE GENERATE DE AI
+// 4. AUTOMOD WITH AI-GENERATED WARNINGS
 // ==========================================
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
@@ -304,7 +297,7 @@ client.on('messageCreate', async message => {
                         aiWarningMessage = groqResponse.choices[0].message.content;
                     }
                 } catch (apiError) {
-                    console.error('⚠️ Groq API Error (AutoMod): Se folosește mesajul standard.', apiError.message);
+                    console.error('⚠️ Groq API Error (AutoMod): Using fallback text.', apiError.message);
                 }
 
                 const finalText = `⚠️ **Notification from ${message.guild.name}:**\n\n${aiWarningMessage}`;
@@ -337,7 +330,7 @@ client.on('messageCreate', async message => {
 });
 
 // ==========================================
-// 5. GESTIONARE INTERACȚIUNI
+// 5. INTERACTION HANDLING
 // ==========================================
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
@@ -406,7 +399,7 @@ client.on('interactionCreate', async interaction => {
             });
 
             if (!response.choices || response.choices.length === 0) {
-                throw new Error("Groq API a returnat un răspuns gol.");
+                throw new Error("Groq API returned an empty response.");
             }
 
             let aiMessage = response.choices[0].message.content;
@@ -452,8 +445,8 @@ client.on('interactionCreate', async interaction => {
                 }
             }
         } catch (err) {
-            console.error('🔴 EROARE CRITICĂ DISCORD/GROQ:', err);
-            await interaction.editReply({ content: `❌ System Error: Conexiune eșuată cu serverul AI sau istoric corupt.` });
+            console.error('🔴 CRITICAL DISCORD/GROQ ERROR:', err);
+            await interaction.editReply({ content: `❌ System Error: Failed connection with the AI host or corrupted history buffer.` });
         }
     }
 
@@ -805,9 +798,47 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ embeds: [ballEmbed] });
     }
 
-    // --- HANDLE /PHOTO ---
+    // --- HANDLE /PHOTO (FULLY INTEGRATED WITH YOUR IMAGE_API_KEY) ---
     else if (commandName === 'photo') {
-        await interaction.reply({ content: '📸 Image generation setup requires a separate specialized API key (like DALL-E or Midjourney). Currently, I can only provide high-tech textual analysis and moderate the chat!' });
+        const description = interaction.options.getString('description');
+        await interaction.deferReply();
+
+        try {
+            const response = await fetch("https://api.openai.com/v1/images/generations", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${IMAGE_API_KEY}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    model: "dall-e-3",
+                    prompt: description,
+                    n: 1,
+                    size: "1024x1024"
+                })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error?.message || "Unknown error occurred on the image API server.");
+            }
+
+            const data = await response.json();
+            const imageUrl = data.data[0].url;
+
+            const photoEmbed = new EmbedBuilder()
+                .setColor('#1ABC9C')
+                .setTitle('🖼️ OrionAI Image Generator')
+                .setDescription(`**Prompt:** ${description}`)
+                .setImage(imageUrl)
+                .setTimestamp()
+                .setFooter({ text: `Generated for ${interaction.user.username}`, iconURL: client.user.displayAvatarURL() });
+
+            await interaction.editReply({ embeds: [photoEmbed] });
+        } catch (error) {
+            console.error('❌ Error executing /photo command:', error);
+            await interaction.editReply({ content: `❌ Image generation failed. Reason: *${error.message}*` });
+        }
     }
 });
 
