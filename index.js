@@ -12,7 +12,8 @@ const Groq = require('groq-sdk');
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY; 
-const IMAGE_API_KEY = process.env.IMAGE_API_KEY;
+// Fallback to OPENAI_API_KEY if IMAGE_API_KEY isn't explicitly defined
+const IMAGE_API_KEY = process.env.IMAGE_API_KEY || process.env.OPENAI_API_KEY;
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
 
 // ADD ANY TEXT CHANNEL NAMES YOU WANT THE WELCOME SYSTEM TO TARGET HERE
@@ -196,9 +197,9 @@ const commands = [
 ].map(command => command.toJSON());
 
 // ==========================================
-// 3. READY EVENT & DYNAMIC WELCOME SYSTEM
+// 3. READY EVENT (Updated to clientReady for v15 compatibility)
 // ==========================================
-client.once('ready', async () => {
+client.once('clientReady', async () => {
     console.log(`🔒 OrionAI is online and connected to Groq (Llama 3.3 70B)! Connected as: ${client.user.tag}`);
     loadMemory();
 
@@ -798,12 +799,15 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ embeds: [ballEmbed] });
     }
 
-    // --- HANDLE /PHOTO (FULLY INTEGRATED WITH YOUR IMAGE_API_KEY) ---
+    // --- HANDLE /PHOTO ---
     else if (commandName === 'photo') {
         const description = interaction.options.getString('description');
         await interaction.deferReply();
 
         try {
+            // Note: If you are using a proxy service, ensure this URL points to your exact proxy endpoint.
+            // A trailing slash issue or missing 'https' protocol can trigger standard fetch redirects 
+            // which will down-grade a POST request to a GET request automatically, causing the error.
             const response = await fetch("https://api.openai.com/v1/images/generations", {
                 method: "POST",
                 headers: {
@@ -819,8 +823,8 @@ client.on('interactionCreate', async interaction => {
             });
 
             if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error?.message || "Unknown error occurred on the image API server.");
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error?.message || `Server returned status code ${response.status}`);
             }
 
             const data = await response.json();
